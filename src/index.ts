@@ -1,13 +1,14 @@
 import { fromHono } from "chanfana";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { clerkMiddleware, getAuth } from '@hono/clerk-auth'
+import { clerkMiddleware, getAuth } from './middleware/auth'
 import { TaskCreate } from "./endpoints/taskCreate";
 import { TaskDelete } from "./endpoints/taskDelete";
 import { TaskFetch } from "./endpoints/taskFetch";
 import { TaskList } from "./endpoints/taskList";
 import { LLMChat } from "./endpoints/llm";
 import { Info } from "./endpoints/info";
+import { WebSocketTicket } from "./endpoints/websocket-ticket";
 import { handleWebSocket } from "./endpoints/websocket";
 import { handleApiProxy } from "./endpoints/proxy";
 
@@ -52,6 +53,9 @@ openapi.delete("/api/tasks/:taskSlug", TaskDelete);
 // Register new OpenAPI endpoints
 openapi.post("/api/llm", LLMChat);
 openapi.get("/api/info", Info);
+openapi.post("/api/ws/ticket", WebSocketTicket);
+
+
 
 // Register non-OpenAPI routes directly on Hono
 app.get('/api/ws', handleWebSocket);

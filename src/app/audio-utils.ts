@@ -1,5 +1,6 @@
 // Shared audio processing and WebSocket utilities
 import { optimizedBase64Decode, RingBuffer, createOptimizedWavBlob } from './wav_utils';
+import { validateAndConsumeTicket } from '../store/kv';
 
 // WebSocket message types
 export interface AudioStreamStartMessage {
@@ -74,11 +75,18 @@ export function getAudioEnv() {
   return envVariables;
 }
 
+// User context interface for authenticated sessions
+export interface AudioSessionContext {
+  userId?: string;
+  [key: string]: any;
+}
+
 // WebSocket session handler
-export async function handleAudioSession(websocket: WebSocket): Promise<void> {
+export async function handleAudioSession(websocket: WebSocket, context?: AudioSessionContext): Promise<void> {
   websocket.accept();
   
   const env = getAudioEnv();
+  const userId = context?.userId || 'anonymous';
   
   let audioChunkCounter = 0;
   let globalTimeMs = 0;
@@ -112,7 +120,8 @@ export async function handleAudioSession(websocket: WebSocket): Promise<void> {
             previousChunkBuffer.clear();
             speechStartTimeMs = 0;
             const startTimestamp = new Date().toISOString();
-            websocket.send(MESSAGE_TEMPLATES.stream_start_ack_prefix + startTimestamp + '"}');
+            console.log(`Audio stream started for user: ${userId}`);
+            websocket.send(MESSAGE_TEMPLATES.stream_start_ack_prefix + startTimestamp + '","userId":"' + userId + '"}');
             break;
 
           // --- 主要修改部分：实现 VAD 缓存逻辑 ---
@@ -227,7 +236,7 @@ export async function handleAudioSession(websocket: WebSocket): Promise<void> {
 
   websocket.addEventListener("close", () => {
     websocket.close();
-    console.log("WebSocket connection closed");
+    console.log(`WebSocket connection closed for user: ${userId}`);
   })
 }
 
@@ -395,4 +404,261 @@ export async function processAudioWithGroq(audioDataChunks: Uint8Array[], websoc
         };
         websocket.send(JSON.stringify(errorResult));
     }
+}
+
+// Authentication message types for first-message auth
+export interface AuthMessage {
+  type: 'auth';
+  ticket: string;
+}
+
+export interface AuthSuccessMessage {
+  type: 'auth_success';
+  userId: string;
+  timestamp: string;
+}
+
+export interface AuthErrorMessage {
+  type: 'auth_error';
+  error: string;
+  timestamp: string;
+}
+
+// Enhanced WebSocket session handler with First Message Authentication
+export async function handleSecureAudioSession(websocket: WebSocket, env: any): Promise<void> {
+  websocket.accept();
+  
+  let isAuthenticated = false;
+  let userId: string | null = null;
+  const connectionStart = Date.now();
+
+  // Authentication timeout (5 seconds)
+  const authTimeout = setTimeout(() => {
+    if (!isAuthenticated) {
+      console.log('WebSocket connection timed out - no authentication within 5 seconds');
+      websocket.send(JSON.stringify({
+        type: 'auth_error',
+        error: 'Authentication timeout - connection closed',
+        timestamp: new Date().toISOString()
+      }));
+      websocket.close(1008, 'Authentication timeout');
+    }
+  }, 5000);
+
+  let audioChunkCounter = 0;
+  let globalTimeMs = 0;
+  let isCaching = false;
+  let speechAudioCache: Uint8Array[] = [];
+  let previousChunkBuffer = new RingBuffer(256 * BYTES_PER_MS);
+  let speechStartTimeMs = 0;
+  
+  const MESSAGE_TEMPLATES = {
+    vad_cache_start: '{"type":"vad_cache_start"}',
+    vad_cache_end_prefix: '{"type":"vad_cache_end","timestamp":"',
+    stream_start_ack_prefix: '{"type":"audio_stream_start_ack","timestamp":"',
+    stream_end_ack_prefix: '{"type":"audio_stream_end_ack","receivedChunks":',
+  };
+
+  websocket.addEventListener("message", async (event: MessageEvent) => {
+    const data = event.data as string;
+    
+    try {
+      const parsedMessage = JSON.parse(data);
+      
+      // Handle authentication first
+      if (!isAuthenticated) {
+        if (parsedMessage.type === 'auth') {
+          const authMessage = parsedMessage as AuthMessage;
+          
+          if (!authMessage.ticket) {
+            websocket.send(JSON.stringify({
+              type: 'auth_error',
+              error: 'Missing ticket in authentication message',
+              timestamp: new Date().toISOString()
+            }));
+            websocket.close(1008, 'Invalid authentication');
+            return;
+          }
+
+          // Validate ticket
+          const validation = await validateAndConsumeTicket(authMessage.ticket, env.WS_TICKETS_KV);
+          
+          if (!validation) {
+            websocket.send(JSON.stringify({
+              type: 'auth_error',
+              error: 'Invalid or expired ticket',
+              timestamp: new Date().toISOString()
+            }));
+            websocket.close(1008, 'Authentication failed');
+            return;
+          }
+
+          // Authentication successful
+          isAuthenticated = true;
+          userId = validation.userId;
+          clearTimeout(authTimeout);
+          
+          console.log(`WebSocket authenticated for user: ${userId} (took ${Date.now() - connectionStart}ms)`);
+          
+          websocket.send(JSON.stringify({
+            type: 'auth_success',
+            userId: userId,
+            timestamp: new Date().toISOString()
+          }));
+          
+          return;
+        } else {
+          // Not authenticated and not an auth message
+          websocket.send(JSON.stringify({
+            type: 'auth_error',
+            error: 'Must authenticate first with auth message',
+            timestamp: new Date().toISOString()
+          }));
+          websocket.close(1008, 'Authentication required');
+          return;
+        }
+      }
+
+      // Handle audio messages (only after authentication)
+      await handleAudioMessage(parsedMessage, websocket, {
+        audioChunkCounter,
+        globalTimeMs,
+        isCaching,
+        speechAudioCache,
+        previousChunkBuffer,
+        speechStartTimeMs,
+        MESSAGE_TEMPLATES,
+        userId: userId!
+      });
+
+    } catch (parseError) {
+      const err = parseError as Error;
+      const errorResponse = JSON.stringify({
+        error: "Failed to parse message as JSON",
+        parseError: err.message,
+        receivedData: typeof data === 'string' ? data.substring(0, 100) + (data.length > 100 ? '...' : '') : 'Non-string data',
+        timestamp: new Date().toISOString()
+      });
+      websocket.send(errorResponse);
+    }
+  });
+
+  websocket.addEventListener("close", () => {
+    clearTimeout(authTimeout);
+    const status = isAuthenticated ? `authenticated user: ${userId}` : 'unauthenticated connection';
+    console.log(`WebSocket connection closed for ${status}`);
+  });
+}
+
+// Extracted audio message handler for cleaner code
+async function handleAudioMessage(
+  parsedMessage: any,
+  websocket: WebSocket,
+  context: {
+    audioChunkCounter: number;
+    globalTimeMs: number;
+    isCaching: boolean;
+    speechAudioCache: Uint8Array[];
+    previousChunkBuffer: RingBuffer;
+    speechStartTimeMs: number;
+    MESSAGE_TEMPLATES: any;
+    userId: string;
+  }
+) {
+  const env = getAudioEnv();
+
+  switch (parsedMessage.type) {
+    case 'audio_stream_start':
+      context.audioChunkCounter = 0;
+      context.globalTimeMs = 0;
+      context.isCaching = false;
+      context.speechAudioCache = [];
+      context.previousChunkBuffer.clear();
+      context.speechStartTimeMs = 0;
+      const startTimestamp = new Date().toISOString();
+      console.log(`Audio stream started for user: ${context.userId}`);
+      websocket.send(context.MESSAGE_TEMPLATES.stream_start_ack_prefix + startTimestamp + '","userId":"' + context.userId + '"}');
+      break;
+
+    case 'audio_chunk':
+      const { vad_state, vad_offset_ms } = parsedMessage;
+      context.audioChunkCounter++;
+      
+      let currentChunk: Uint8Array | null = null;
+      if (parsedMessage.data && parsedMessage.data.length > 0) {
+        currentChunk = optimizedBase64Decode(parsedMessage.data);
+      }
+      
+      if (vad_state === 'start') {
+        context.isCaching = true;
+        context.speechAudioCache = [];
+        context.speechStartTimeMs = context.globalTimeMs + (vad_offset_ms || 0);
+        
+        if (vad_offset_ms && vad_offset_ms < 0) {
+          const bufferData = context.previousChunkBuffer.getData();
+          if (bufferData.length > 0) {
+            const offsetBytes = Math.abs(vad_offset_ms) * BYTES_PER_MS;
+            const startByte = Math.max(0, bufferData.length - offsetBytes);
+            const prefixChunk = bufferData.slice(startByte);
+            context.speechAudioCache.push(prefixChunk);
+          }
+        }
+        
+        websocket.send(context.MESSAGE_TEMPLATES.vad_cache_start);
+      }
+
+      if (context.isCaching && currentChunk && vad_state !== 'end') {
+        context.speechAudioCache.push(currentChunk);
+      }
+      
+      if (currentChunk) {
+        context.previousChunkBuffer.append(currentChunk);
+      }
+      context.globalTimeMs += CHUNK_DURATION_MS;
+      
+      if (vad_state === 'end' && context.isCaching) {
+        const speechEndTimeMs = context.globalTimeMs + (vad_offset_ms || 0);
+        
+        if (currentChunk && vad_offset_ms && vad_offset_ms > 0) {
+          const endByte = Math.min(currentChunk.length, vad_offset_ms * BYTES_PER_MS);
+          const endChunk = currentChunk.slice(0, endByte);
+          context.speechAudioCache.push(endChunk);
+        } else if (currentChunk) {
+          context.speechAudioCache.push(currentChunk);
+        }
+        
+        context.isCaching = false;
+        const cachedData = [...context.speechAudioCache];
+        context.speechAudioCache = [];
+        
+        const vadEndTimestamp = new Date().toISOString();
+        websocket.send(context.MESSAGE_TEMPLATES.vad_cache_end_prefix + vadEndTimestamp + '"}');
+        
+        const asrFunction = env.USE_FIREWORKS ? processAudioWithFireworks : processAudioWithGroq;
+        asrFunction(cachedData, websocket, context.speechStartTimeMs, speechEndTimeMs).catch(err => {
+          websocket.send(JSON.stringify({
+            type: 'transcription_error',
+            error: `Failed to process audio with ${env.USE_FIREWORKS ? 'Fireworks' : 'Groq'} API.`,
+            details: err.message,
+            timestamp: new Date().toISOString()
+          }));
+        });
+      }
+      break;
+
+    case 'audio_stream_end':
+      const endTimestamp = new Date().toISOString();
+      websocket.send(context.MESSAGE_TEMPLATES.stream_end_ack_prefix + context.audioChunkCounter + ',"timestamp":"' + endTimestamp + '"}');
+      break;
+
+    default:
+      const unknownType = parsedMessage.type || 'undefined';
+      const errorResponse = JSON.stringify({
+        error: "Unknown message type received",
+        unknownType: unknownType,
+        receivedMessage: parsedMessage,
+        timestamp: new Date().toISOString()
+      });
+      websocket.send(errorResponse);
+  }
 }
