@@ -2,7 +2,12 @@ import { DateTime, Str } from "chanfana";
 import type { Context } from "hono";
 import { z } from "zod";
 
-export type AppContext = Context<{ Bindings: Env }>;
+// Extended environment interface for the app
+interface ExtendedEnv extends Env {
+
+}
+
+export type AppContext = Context<{ Bindings: ExtendedEnv }>;
 
 export const Task = z.object({
 	name: Str({ example: "lorem" }),
