@@ -1,6 +1,7 @@
 // Shared audio processing and WebSocket utilities
 import { optimizedBase64Decode, RingBuffer, createOptimizedWavBlob } from './wav_utils';
 import { validateAndConsumeTicket } from '../store/kv';
+import { OptimizedAudioStorage, createAudioSession, AudioChunk } from './audio-storage';
 
 // WebSocket message types
 export interface AudioStreamStartMessage {
@@ -426,16 +427,36 @@ export interface AuthErrorMessage {
 
 // Enhanced WebSocket session handler with First Message Authentication
 export async function handleSecureAudioSession(websocket: WebSocket, env: any): Promise<void> {
+  console.log('🔐 Accepting WebSocket connection...');
   websocket.accept();
+  console.log('✅ WebSocket accepted successfully');
   
   let isAuthenticated = false;
   let userId: string | null = null;
+  let audioStorage: OptimizedAudioStorage | null = null;
   const connectionStart = Date.now();
+
+  // Add error and close handlers for debugging
+  websocket.addEventListener('error', (event) => {
+    console.error('❌ WebSocket error in handleSecureAudioSession:', event);
+  });
+  
+  websocket.addEventListener('close', (event) => {
+    console.log('🔌 WebSocket closed in handleSecureAudioSession:', event.code, event.reason);
+    if (audioStorage) {
+      console.log('🧹 Cleaning up audio storage...');
+      audioStorage.cleanup().catch(err => console.error('❌ Audio storage cleanup failed:', err));
+    }
+  });
+  
+  websocket.addEventListener('open', () => {
+    console.log('✅ WebSocket opened in handleSecureAudioSession');
+  });
 
   // Authentication timeout (5 seconds)
   const authTimeout = setTimeout(() => {
     if (!isAuthenticated) {
-      console.log('WebSocket connection timed out - no authentication within 5 seconds');
+      console.log('❌ WebSocket connection timed out - no authentication within 5 seconds');
       websocket.send(JSON.stringify({
         type: 'auth_error',
         error: 'Authentication timeout - connection closed',
@@ -498,6 +519,22 @@ export async function handleSecureAudioSession(websocket: WebSocket, env: any): 
           userId = validation.userId;
           clearTimeout(authTimeout);
           
+          // 初始化音频存储 (优化的内存缓存方案)
+          try {
+            audioStorage = createAudioSession(userId, env.FRAPP_FILES_STORE, {
+              windowSizeMs: 2 * 60 * 1000,      // 2分钟窗口
+              uploadIntervalMs: 60 * 1000,      // 1分钟上传
+              maxMemoryMB: 10,                  // 10MB限制
+              enableDebug: env.DEBUG_MODE === 'true',
+              storeOriginalAudio: true,         // 存储完整原始音频流
+              storeVadSegments: false           // 不单独存储VAD片段
+            });
+            console.log(`🎵 Audio storage initialized for user: ${userId}`);
+          } catch (error) {
+            console.error('❌ Failed to initialize audio storage:', error);
+            // 非致命错误，继续运行但不存储音频
+          }
+          
           console.log(`WebSocket authenticated for user: ${userId} (took ${Date.now() - connectionStart}ms)`);
           
           websocket.send(JSON.stringify({
@@ -528,7 +565,8 @@ export async function handleSecureAudioSession(websocket: WebSocket, env: any): 
         previousChunkBuffer,
         speechStartTimeMs,
         MESSAGE_TEMPLATES,
-        userId: userId!
+        userId: userId!,
+        audioStorage
       });
 
     } catch (parseError) {
@@ -543,8 +581,19 @@ export async function handleSecureAudioSession(websocket: WebSocket, env: any): 
     }
   });
 
-  websocket.addEventListener("close", () => {
+  websocket.addEventListener("close", async () => {
     clearTimeout(authTimeout);
+    
+    // 清理音频存储资源
+    if (audioStorage) {
+      try {
+        await audioStorage.cleanup();
+        console.log(`🧹 Audio storage cleaned up for user: ${userId}`);
+      } catch (error) {
+        console.error('❌ Error during audio storage cleanup:', error);
+      }
+    }
+    
     const status = isAuthenticated ? `authenticated user: ${userId}` : 'unauthenticated connection';
     console.log(`WebSocket connection closed for ${status}`);
   });
@@ -563,6 +612,7 @@ async function handleAudioMessage(
     speechStartTimeMs: number;
     MESSAGE_TEMPLATES: any;
     userId: string;
+    audioStorage: OptimizedAudioStorage | null;
   }
 ) {
   const env = getAudioEnv();
@@ -587,6 +637,22 @@ async function handleAudioMessage(
       let currentChunk: Uint8Array | null = null;
       if (parsedMessage.data && parsedMessage.data.length > 0) {
         currentChunk = optimizedBase64Decode(parsedMessage.data);
+        
+        // 原始完整音频存储处理 (异步，不阻塞实时转录)
+        // 存储所有音频块，不依赖VAD状态，保持完整音频流连续性
+        if (currentChunk && context.audioStorage) {
+          const audioChunk: AudioChunk = {
+            timestamp: context.globalTimeMs,
+            data: currentChunk,
+            vadState: vad_state,
+            vadOffset: vad_offset_ms
+          };
+          
+          // 异步处理，不等待完成
+          context.audioStorage.processAudioChunk(audioChunk).catch(err => {
+            console.error('❌ Original audio storage processing error:', err);
+          });
+        }
       }
       
       if (vad_state === 'start') {

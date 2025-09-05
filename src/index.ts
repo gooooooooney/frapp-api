@@ -8,6 +8,15 @@ import { WebSocketTicket } from "./endpoints/websocket-ticket";
 import { handleWebSocket } from "./endpoints/websocket";
 import { handleApiProxy } from "./endpoints/proxy";
 import { handleTestPage } from "./endpoints/test";
+import { handleAudioStorageTest } from "./endpoints/audio-storage-test";
+import { AudioTestComplete } from "./endpoints/audio-test-complete";
+import { 
+  AudioStorageStats, 
+  UserAudioFiles, 
+  DownloadAudioFile, 
+  DeleteAudioFile, 
+  CleanupExpiredFiles 
+} from "./endpoints/audio-storage-admin";
 
 // Start a Hono app
 const app = new Hono<{ Bindings: Env }>();
@@ -63,8 +72,17 @@ openapi.post("/api/llm", LLMChat);
 openapi.get("/api/info", Info);
 openapi.post("/api/ws/ticket", WebSocketTicket);
 
-// Test page for Clerk authentication
+// 音频存储管理端点
+openapi.get("/api/audio-storage/stats", AudioStorageStats);
+openapi.get("/api/audio-storage/files/:userId", UserAudioFiles);
+openapi.get("/api/audio-storage/download/:filePath", DownloadAudioFile);
+openapi.delete("/api/audio-storage/files/:filePath", DeleteAudioFile);
+openapi.post("/api/audio-storage/cleanup", CleanupExpiredFiles);
+
+// Test pages
 app.get('/test', handleTestPage);
+app.get('/audio-storage-test', handleAudioStorageTest);
+openapi.get('/audio-test-complete', AudioTestComplete);
 
 
 

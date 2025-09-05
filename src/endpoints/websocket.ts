@@ -6,37 +6,89 @@ export async function handleWebSocket(c: Context): Promise<Response> {
   const request = c.req.raw;
   const env = c.env;
   
+  console.log('🔌 WebSocket connection attempt:', {
+    url: request.url,
+    headers: Object.fromEntries(request.headers.entries())
+  });
+  
   const upgradeHeader = request.headers.get("Upgrade");
   if (upgradeHeader !== "websocket") {
+    console.error('❌ Invalid upgrade header:', upgradeHeader);
     return new Response("Expected websocket", { status: 400 });
   }
 
-  // Origin validation (CSRF protection)
+  // Origin validation with better debugging
   const origin = request.headers.get("Origin");
-  const allowedOrigins = (env.CLERK_AUTHORIZED_PARTIES || 'localhost:3000').split(',');
+  console.log('🔍 Origin validation - Origin:', origin);
+  
+  // Use production-friendly origin validation
+  const allowedOrigins = [
+    'localhost',
+    '127.0.0.1',
+    'frapp-api-v1.frapp.ai',  // Production domain
+    ...((env.CLERK_AUTHORIZED_PARTIES || '').split(',').filter(Boolean))
+  ];
+  
+  console.log('🔍 Allowed origins:', allowedOrigins);
   
   if (origin) {
     const originHost = new URL(origin).hostname;
+    console.log('🔍 Origin hostname:', originHost);
+    
     const isAllowed = allowedOrigins.some(allowed => {
       const allowedHost = allowed.includes(':') ? allowed.split(':')[0] : allowed;
-      return originHost === allowedHost || originHost.endsWith('.' + allowedHost);
+      const matches = originHost === allowedHost || originHost.endsWith('.' + allowedHost);
+      console.log(`🔍 Checking ${originHost} against ${allowedHost}: ${matches}`);
+      return matches;
     });
     
     if (!isAllowed) {
+      console.error('❌ Origin not allowed:', originHost, 'Allowed:', allowedOrigins);
       return new Response("Forbidden: Invalid origin", { status: 403 });
     }
+    
+    console.log('✅ Origin validation passed:', originHost);
   }
 
-  // Initialize audio environment
-  initializeAudioEnv(env);
+  try {
+    // Initialize audio environment
+    console.log('🎵 Initializing audio environment...');
+    initializeAudioEnv(env);
 
-  const [client, server] = Object.values(new WebSocketPair()) as [WebSocket, WebSocket];
-  
-  // Pass WebSocket to secure session handler (handles first-message auth)
-  handleSecureAudioSession(server, env);
+    // Create WebSocket pair
+    console.log('🔌 Creating WebSocket pair...');
+    const webSocketPair = new WebSocketPair();
+    const [client, server] = [webSocketPair[0], webSocketPair[1]];
+    
+    // Add connection event handlers for debugging
+    server.addEventListener('open', () => {
+      console.log('✅ Server WebSocket opened');
+    });
+    
+    server.addEventListener('error', (event) => {
+      console.error('❌ Server WebSocket error:', event);
+    });
+    
+    server.addEventListener('close', (event) => {
+      console.log('🔌 Server WebSocket closed:', event.code, event.reason);
+    });
 
-  return new Response(null, {
-    status: 101,
-    webSocket: client
-  });
+    // Pass WebSocket to secure session handler (handles first-message auth)
+    console.log('🔐 Setting up secure session handler...');
+    handleSecureAudioSession(server, env);
+
+    console.log('✅ WebSocket upgrade successful, returning client');
+    
+    // Note: server.accept() is called in handleSecureAudioSession()
+
+    return new Response(null, {
+      status: 101,
+      webSocket: client
+    });
+    
+  } catch (error) {
+    console.error('❌ WebSocket setup failed:', error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return new Response(`WebSocket setup failed: ${errorMessage}`, { status: 500 });
+  }
 }

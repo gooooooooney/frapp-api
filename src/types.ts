@@ -26,6 +26,35 @@ interface ExtendedEnv extends Env {
 
 export type AppContext = Context<{ Bindings: ExtendedEnv }>;
 
+// 音频存储相关类型定义
+export interface AudioStorageMetrics {
+  sessionId: string;
+  userId: string;
+  totalChunks: number;
+  memoryUsageMB: number;
+  uploadsCompleted: number;
+  uploadsFailed: number;
+  isActive: boolean;
+  lastUploadTime?: number;
+}
+
+export interface AudioFileInfo {
+  sessionId: string;
+  filename: string;
+  size: number;
+  uploadedAt: string;
+  chunkId?: string;
+  chunkCount?: string;
+  metadata?: Record<string, string>;
+}
+
+export interface StorageCleanupResult {
+  deletedFiles: number;
+  freedSpaceBytes: number;
+  freedSpaceMB: number;
+  errors?: string[];
+}
+
 export const Task = z.object({
 	name: Str({ example: "lorem" }),
 	slug: Str(),
