@@ -49,7 +49,8 @@ export class TicketStorage {
       const data = await this.kv.get(`ticket:${ticket}`);
       return data ? JSON.parse(data) : null;
     } else {
-      // In memory mode, check manual expiration
+      // In memory mode, do cleanup and check manual expiration
+      cleanupExpiredTickets();
       const data = memoryStore.get(ticket);
       if (data && data.expires < Date.now()) {
         memoryStore.delete(ticket);
@@ -82,21 +83,19 @@ export class TicketStorage {
 // Development fallback (memory store)
 const memoryStore = new Map<string, TicketData>();
 
-// Cleanup expired tickets in memory mode (runs every minute)
-if (typeof setInterval !== 'undefined') {
-  setInterval(() => {
-    const now = Date.now();
-    let cleaned = 0;
-    for (const [ticket, data] of memoryStore) {
-      if (data.expires < now || data.used) {
-        memoryStore.delete(ticket);
-        cleaned++;
-      }
+// Cleanup function for expired tickets in memory mode
+function cleanupExpiredTickets() {
+  const now = Date.now();
+  let cleaned = 0;
+  for (const [ticket, data] of memoryStore) {
+    if (data.expires < now || data.used) {
+      memoryStore.delete(ticket);
+      cleaned++;
     }
-    if (cleaned > 0) {
-      console.log(`Memory cleanup: removed ${cleaned} expired tickets`);
-    }
-  }, 60000); // Clean every minute
+  }
+  if (cleaned > 0) {
+    console.log(`Memory cleanup: removed ${cleaned} expired tickets`);
+  }
 }
 
 /**

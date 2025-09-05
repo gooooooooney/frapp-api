@@ -26,8 +26,7 @@
 	 * https://developers.cloudflare.com/workers/wrangler/configuration/#environment-variables
 	 */
 	"vars": {
-		"DEBUG_MODE": "true",
-		"USE_FIREWORKS": "false"
+		
 	},
 	/**
 	 * SECURITY: API Keys should be stored as secrets, not vars!
