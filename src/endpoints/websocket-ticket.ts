@@ -64,7 +64,7 @@ export class WebSocketTicket extends OpenAPIRoute {
 
       // Generate temporary ticket
       const ticket = generateSecureTicket();
-      const expiresAt = Date.now() + (5 * 60 * 1000); // 5 minutes
+      const expiresAt = Date.now() + (60 * 60 * 1000); // 60 minutes
 
       // Store ticket
       await storage.set(ticket, {
@@ -77,7 +77,7 @@ export class WebSocketTicket extends OpenAPIRoute {
 
       return c.json({
         ticket,
-        expires_in: 300 // 5 minutes in seconds
+        expires_in: 3600 // 60 minutes in seconds
       });
 
     } catch (error) {
