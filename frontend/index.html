@@ -1,0 +1,3114 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>实时语音识别系统</title>
+
+    <!-- Clerk SDK 已手动配置 -->
+    <script>
+        // 标记Clerk可用，因为已手动添加Clerk脚本标签
+        window.clerkAvailable = true;
+        console.log('Clerk SDK: Manual configuration detected, SDK available');
+    </script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f5f5;
+            overflow-x: hidden;
+        }
+
+        /* 控制面板样式 */
+        .control-panel {
+            background: rgba(255, 255, 255, 0.98);
+            backdrop-filter: blur(10px);
+            box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15);
+            transition: all 0.3s ease;
+            position: fixed;
+            bottom: 60px;
+            left: 0;
+            right: 0;
+            z-index: 998;
+            height: calc(75vh - 60px);
+            max-height: calc(100vh - 120px);
+            display: none;
+            overflow-y: auto;
+        }
+
+        .control-panel.show {
+            display: flex;
+            flex-direction: column;
+            animation: slideUp 0.3s ease;
+        }
+
+        @keyframes slideUp {
+            from {
+                transform: translateY(100%);
+            }
+
+            to {
+                transform: translateY(0);
+            }
+        }
+
+        .settings-button {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            color: #667eea;
+            border: 2px solid #667eea;
+            padding: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 44px;
+            height: 44px;
+        }
+
+        .settings-button:hover {
+            background: #667eea;
+            color: white;
+            transform: translateY(-1px);
+            box-shadow: 0 3px 12px rgba(102, 126, 234, 0.3);
+        }
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            flex-shrink: 0;
+        }
+
+        .close-btn {
+            cursor: pointer;
+            font-size: 20px;
+            opacity: 0.8;
+            transition: opacity 0.2s;
+        }
+
+        .close-btn:hover {
+            opacity: 1;
+        }
+
+        .panel-header h2 {
+            font-size: 16px;
+            font-weight: 500;
+            margin: 0;
+        }
+
+        .toggle-btn {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 20px;
+            cursor: pointer;
+            transition: transform 0.3s;
+        }
+
+        .control-panel.collapsed .toggle-btn {
+            transform: rotate(180deg);
+        }
+
+        .panel-content {
+            padding: 20px;
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        /* 参数配置区域 */
+        .config-section {
+            display: grid;
+            grid-template-columns: 1fr 2fr 2fr 2fr;
+            gap: 20px;
+            height: 100%;
+        }
+
+        .config-group {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #e9ecef;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            max-height: calc(75vh - 120px);
+            /* 固定最大高度 */
+        }
+
+        .config-group h3 {
+            margin-bottom: 15px;
+            color: #495057;
+            font-size: 14px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .config-row {
+            display: flex;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .config-row:last-child {
+            margin-bottom: 0;
+        }
+
+        .config-row label {
+            flex: 0 0 120px;
+            font-size: 13px;
+            color: #6c757d;
+            font-weight: 500;
+        }
+
+        .config-row input {
+            flex: 1;
+            padding: 6px 10px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 13px;
+            transition: border-color 0.2s;
+        }
+
+        .config-row input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
+        }
+
+        .config-row input[type="number"] {
+            width: 80px;
+        }
+
+        .config-row .unit {
+            margin-left: 8px;
+            color: #6c757d;
+            font-size: 12px;
+        }
+
+        /* 按钮样式 */
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        button {
+            padding: 8px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        button.primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        button.primary:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+
+        button.secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        button.success {
+            background: #28a745;
+            color: white;
+        }
+
+        button.danger {
+            background: #dc3545;
+            color: white;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* 日志区域 */
+        .log-container {
+            background: #1e1e1e;
+            border-radius: 8px;
+            padding: 15px;
+            height: 200px;
+            overflow-y: auto;
+            margin-top: 20px;
+        }
+
+        .log-container h3 {
+            color: #0f0;
+            margin-bottom: 10px;
+            font-size: 14px;
+            font-family: 'Courier New', monospace;
+        }
+
+        #log {
+            color: #0f0;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            line-height: 1.4;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        /* 主内容区域 - 三栏布局 */
+        .main-content {
+            padding: 20px;
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        .events-container {
+            display: grid;
+            grid-template-columns: 2fr 2fr 3.6fr 2fr;
+            gap: 15px;
+            height: calc(100vh - 40px);
+            min-height: 400px;
+        }
+
+        .events-section {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+            padding: 20px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .events-section h3 {
+            margin: 0 0 20px 0;
+            color: #333;
+            font-size: 18px;
+            font-weight: 600;
+            padding-bottom: 12px;
+            border-bottom: 2px solid #e9ecef;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .events-content {
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        /* 卡片样式 */
+        .event-card {
+            background: #ffffff;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 10px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+            transition: all 0.2s;
+            animation: slideIn 0.3s ease;
+        }
+
+        .event-card:hover {
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+            transform: translateY(-1px);
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .event-header {
+            font-weight: 600;
+            color: #495057;
+            margin-bottom: 6px;
+            font-size: 13px;
+        }
+
+        .card-title {
+            font-weight: 600;
+            color: #495057;
+            margin-bottom: 4px;
+            font-size: 11px;
+        }
+
+        .card-timestamp {
+            color: #6c757d;
+            margin-bottom: 2px;
+            font-size: 10px;
+        }
+
+        .card-final-timestamp {
+            color: #28a745;
+            margin-bottom: 6px;
+            font-size: 10px;
+            font-weight: 500;
+        }
+
+        .event-content {
+            font-size: 13px;
+            color: #6c757d;
+            line-height: 1.5;
+        }
+
+        /* VAD事件卡片 */
+        .vad-event-card {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            border: 1px solid #c3cfe2;
+        }
+
+        /* ASR结果卡片 */
+        .asr-result-card {
+            background: linear-gradient(135deg, #e8f5e8 0%, #c3e6c3 100%);
+            border: 1px solid #c3e6c3;
+            cursor: pointer;
+            user-select: none;
+            position: relative;
+            transition: all 0.3s ease;
+        }
+
+        /* Prefetch ASR结果卡片 - 黄色 */
+        .asr-result-card.prefetch {
+            background: linear-gradient(135deg, #fff3e0 0%, #ffe082 100%);
+            border: 1px solid #ffe082;
+        }
+
+        /* 缓存ASR结果卡片 - 绿色（覆盖prefetch） */
+        .asr-result-card.cached {
+            background: linear-gradient(135deg, #e8f5e8 0%, #a5d6a7 100%);
+            border: 1px solid #4caf50;
+        }
+
+        /* 重新处理的ASR结果卡片 - 紫色 */
+        .asr-result-card.reprocessed {
+            background: linear-gradient(135deg, #f3e5f5 0%, #ce93d8 100%);
+            border: 1px solid #9c27b0;
+        }
+
+        /* 被丢弃的ASR结果卡片 - 灰色 + 划线 */
+        .asr-result-card.dropped {
+            background: linear-gradient(135deg, #f5f5f5 0%, #e0e0e0 100%);
+            border: 1px solid #bdbdbd;
+            opacity: 0.7;
+            max-height: 80px;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .asr-result-card.dropped .asr-text {
+            text-decoration: line-through;
+            color: #757575;
+        }
+
+        .asr-result-card.dropped .card-title {
+            color: #757575;
+            font-size: 11px;
+        }
+
+        .asr-result-card.dropped .card-timestamp {
+            color: #9e9e9e;
+            font-size: 10px;
+        }
+
+        .asr-result-card.dropped .asr-text {
+            font-size: 12px;
+        }
+
+        .asr-result-card:hover:not(.dropped) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .asr-result-card.dropped:hover {
+            transform: none;
+            box-shadow: none;
+        }
+
+        .asr-result-card.selected {
+            background: linear-gradient(135deg, #c3e6c3 0%, #81c784 100%);
+            border: 2px solid #4caf50;
+            animation: selectPulse 0.3s ease;
+        }
+
+        .asr-result-card.selected::before {
+            content: '✓';
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: #4caf50;
+            color: white;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: bold;
+            animation: checkIn 0.3s ease;
+        }
+
+        @keyframes selectPulse {
+            0% {
+                transform: scale(1);
+            }
+
+            50% {
+                transform: scale(1.02);
+            }
+
+            100% {
+                transform: scale(1);
+            }
+        }
+
+        @keyframes checkIn {
+            0% {
+                transform: scale(0) rotate(-180deg);
+                opacity: 0;
+            }
+
+            50% {
+                transform: scale(1.2) rotate(10deg);
+            }
+
+            100% {
+                transform: scale(1) rotate(0deg);
+                opacity: 1;
+            }
+        }
+
+        .asr-text {
+            font-size: 14px;
+            color: #2e7d32;
+            font-weight: 500;
+            margin: 8px 0;
+            padding: 4px 8px;
+            border-radius: 4px;
+            min-height: 20px;
+            word-wrap: break-word;
+        }
+
+        .asr-meta {
+            font-size: 11px;
+            color: #666;
+            margin-top: 6px;
+            padding-top: 6px;
+            border-top: 1px solid rgba(0, 0, 0, 0.05);
+        }
+
+        /* LLM响应卡片 */
+        .llm-response-card {
+            background: linear-gradient(135deg, #fff3e0 0%, #ffcc80 100%);
+            border: 1px solid #ffcc80;
+            cursor: pointer;
+            position: relative;
+            transition: all 0.3s ease;
+        }
+
+        .llm-response-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(255, 152, 0, 0.2);
+        }
+
+        .llm-response-card .llm-summary {
+            display: block;
+        }
+
+        .llm-response-card .llm-details {
+            display: none;
+            margin-top: 15px;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .llm-response-card.expanded .llm-summary {
+            display: none;
+        }
+
+        .llm-response-card.expanded .llm-details {
+            display: block;
+        }
+
+        .llm-response-card.expanded {
+            background: linear-gradient(135deg, #ffcc80 0%, #ffa726 100%);
+            border: 2px solid #ff9800;
+        }
+
+        .llm-response-card.expanded::before {
+            content: '📖';
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            font-size: 16px;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .llm-toggle-indicator {
+            position: absolute;
+            bottom: 8px;
+            right: 8px;
+            font-size: 12px;
+            color: #ff9800;
+            font-weight: bold;
+        }
+
+        .llm-response-card:not(.expanded) .llm-toggle-indicator::after {
+            content: '点击查看详情 ▼';
+        }
+
+        .llm-response-card.expanded .llm-toggle-indicator::after {
+            content: '点击收起 ▲';
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* 空状态提示 */
+        .empty-state {
+            text-align: center;
+            color: #adb5bd;
+            padding: 40px 20px;
+            font-size: 14px;
+        }
+
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+            opacity: 0.3;
+        }
+
+        /* 状态指示器 */
+        .status-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+
+        .status-indicator.connected {
+            background: #28a745;
+            animation: pulse 2s infinite;
+        }
+
+        .status-indicator.disconnected {
+            background: #dc3545;
+        }
+
+        .status-indicator.connecting {
+            background: #ffc107;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.7);
+            }
+
+            70% {
+                box-shadow: 0 0 0 10px rgba(40, 167, 69, 0);
+            }
+
+            100% {
+                box-shadow: 0 0 0 0 rgba(40, 167, 69, 0);
+            }
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* 响应式设计 */
+        @media (max-width: 1400px) {
+            .events-container {
+                grid-template-columns: 1fr 1fr;
+                height: auto;
+            }
+
+            .events-section {
+                height: 400px;
+            }
+        }
+
+        @media (max-width: 1000px) {
+            .events-container {
+                grid-template-columns: 1fr;
+                height: auto;
+            }
+
+            .events-section {
+                height: 400px;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .config-section {
+                grid-template-columns: 1fr;
+            }
+
+            .button-group {
+                flex-wrap: wrap;
+            }
+
+            button {
+                flex: 1;
+                min-width: 120px;
+            }
+        }
+
+        /* ASR Prompt相关样式 */
+        .card-header-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+
+        .asr-prompt-toggle {
+            background: rgba(255, 255, 255, 0.9);
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 4px 8px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            color: #666;
+            min-width: 32px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .asr-prompt-toggle:hover {
+            background: rgba(102, 126, 234, 0.1);
+            border-color: #667eea;
+            color: #667eea;
+            transform: translateY(-1px);
+        }
+
+        .asr-prompt-section {
+            margin-top: 10px;
+            padding: 10px;
+            background: rgba(76, 175, 80, 0.05);
+            border: 1px solid rgba(76, 175, 80, 0.2);
+            border-radius: 6px;
+            animation: slideDown 0.3s ease;
+        }
+
+        .asr-prompt-header {
+            font-size: 12px;
+            font-weight: 600;
+            color: #2e7d32;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .asr-prompt-content {
+            font-family: 'Courier New', Monaco, monospace;
+            font-size: 11px;
+            background: rgba(0, 0, 0, 0.05);
+            padding: 8px 10px;
+            border-radius: 4px;
+            color: #333;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid rgba(0, 0, 0, 0.1);
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+                max-height: 0;
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+                max-height: 300px;
+            }
+        }
+
+        /* LLM编辑相关样式 */
+        .llm-processed-output:focus,
+        .llm-processed-output-summary:focus {
+            outline: 2px solid #4caf50;
+            background: rgba(76, 175, 80, 0.1) !important;
+            border-color: #4caf50 !important;
+        }
+
+        .llm-processed-output:hover,
+        .llm-processed-output-summary:hover {
+            border-color: #4caf50;
+            cursor: text;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- 控制面板 -->
+    <div class="control-panel" id="controlPanel">
+        <div class="panel-header">
+            <h2>⚙️ 设置面板</h2>
+            <span class="close-btn" onclick="togglePanel()">✕</span>
+        </div>
+
+        <div class="panel-content">
+            <!-- 参数配置 -->
+            <div class="config-section">
+                <!-- 第一列：通用配置 -->
+                <div class="config-group">
+                    <h3 style="margin-bottom: 15px; flex-shrink: 0;">⚙️ 通用设置</h3>
+                    <div style="overflow-y: auto; flex: 1; max-height: calc(75vh - 180px);">
+                        <!-- 静音超时设置 -->
+                        <div style="margin-bottom: 15px;">
+                            <strong style="color: #495057; font-size: 13px;">⏱️ 录音控制</strong>
+                            <div class="config-row" style="margin-top: 8px;">
+                                <label style="min-width: 80px; font-size: 12px;">静音超时:</label>
+                                <input type="number" id="silenceTimeoutSec" value="10" min="1" max="300" step="1"
+                                    style="width: 60px; font-size: 12px;">
+                                <span class="unit" style="font-size: 11px;">秒</span>
+                            </div>
+                        </div>
+
+                        <!-- Clerk 身份认证 -->
+                        <div style="margin-bottom: 15px;">
+                            <strong style="color: #495057; font-size: 13px;">🔐 身份认证</strong>
+
+                            <!-- Clerk 不可用状态 -->
+                            <div id="clerk-unavailable"
+                                style="display: none; padding: 8px; background: #fff3e0; border: 1px solid #ffcc80; border-radius: 4px;">
+                                <div style="font-size: 12px; color: #e65100; margin-bottom: 6px;">⚠️ Clerk 认证不可用</div>
+                                <div style="font-size: 11px; color: #bf360c; line-height: 1.3;">
+                                    请在 index.html 中配置有效的 Clerk Publishable Key<br>
+                                    <strong>临时方案:</strong> 可手动输入票据进行测试
+                                </div>
+                            </div>
+
+                            <!-- 加载状态 -->
+                            <div id="clerk-loading" style="padding: 10px; text-align: center; color: #666;">
+                                <div style="font-size: 12px; margin-bottom: 5px;">正在加载 Clerk SDK...</div>
+                                <div
+                                    style="width: 20px; height: 20px; border: 2px solid #ddd; border-top: 2px solid #667eea; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto;">
+                                </div>
+                            </div>
+
+                            <!-- 未登录状态 -->
+                            <div id="clerk-signed-out" style="display: none; padding: 8px;">
+                                <div style="font-size: 12px; color: #666; margin-bottom: 8px;">请先登录您的账户</div>
+                                <div style="display: flex; gap: 4px;">
+                                    <button class="primary" onclick="signInClerk()"
+                                        style="flex: 1; padding: 6px; font-size: 12px;">
+                                        🔐 登录
+                                    </button>
+                                    <button class="secondary" onclick="signUpClerk()"
+                                        style="flex: 1; padding: 6px; font-size: 12px;">
+                                        📝 注册
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- 已登录状态 -->
+                            <div id="clerk-signed-in" style="display: none;">
+                                <div id="clerk-user-info"
+                                    style="font-size: 11px; color: #555; margin-bottom: 8px; padding: 6px; background: #f8f9fa; border-radius: 4px;">
+                                </div>
+                                <div style="display: flex; gap: 4px; margin-bottom: 6px;">
+                                    <button class="primary" id="btn-get-jwt-token" onclick="getJWTToken()"
+                                        style="flex: 1; padding: 6px; font-size: 12px;">
+                                        🎫 获取Token
+                                    </button>
+                                    <button class="secondary" onclick="signOutClerk()"
+                                        style="padding: 6px 8px; font-size: 12px;">
+                                        🚪 退出
+                                    </button>
+                                </div>
+                                <div id="clerk-auth-status"
+                                    style="font-size: 11px; padding: 4px; border-radius: 3px; display: none;"></div>
+                            </div>
+                        </div>
+
+                        <!-- WebSocket设置 -->
+                        <div style="margin-bottom: 15px;">
+                            <strong style="color: #495057; font-size: 13px;">🌐 WebSocket</strong>
+                            <div class="config-row" style="margin-top: 8px;">
+                                <label style="min-width: 80px;">WS地址:</label>
+                                <input type="text" id="wsUrl" value="/api/ws" style="flex: 1; font-size: 12px;">
+                            </div>
+                            <div class="config-row" style="margin-top: 8px;">
+                                <label style="min-width: 80px;">WS Ticket:</label>
+                                <input type="text" id="wsTicket" placeholder="输入WebSocket票据"
+                                    style="flex: 1; font-size: 12px;">
+                            </div>
+                            <div class="config-row" style="margin-top: 8px;">
+                                <button class="secondary" onclick="getWebSocketTicket()"
+                                    style="width: 48%; padding: 6px; font-size: 12px; margin-right: 4%;">
+                                    🎫 获取票据
+                                </button>
+                                <button class="secondary" onclick="testWebSocketConnection()"
+                                    style="width: 48%; padding: 6px; font-size: 12px;">
+                                    🔗 测试连接
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- LLM设置 -->
+                        <div style="margin-bottom: 15px;">
+                            <strong style="color: #495057; font-size: 13px;">🤖 LLM设置</strong>
+                            <div class="config-row" style="margin-top: 8px;">
+                                <label style="min-width: 80px;">LLM地址:</label>
+                                <input type="text" id="llmUrl" value="https://api.frapp.ai/llm"
+                                    style="flex: 1; font-size: 12px;">
+                            </div>
+                            <div class="config-row" style="margin-top: 8px;">
+                                <label style="min-width: 80px;">模型:</label>
+                                <select id="llmModel"
+                                    style="flex: 1; padding: 6px; border: 1px solid #ced4da; border-radius: 3px; font-size: 12px;">
+                                    <option value="gemini2.0">Gemini 2.0</option>
+                                    <option value="gemini2.5" selected>Gemini 2.5</option>
+                                    <option value="orouter_gemini2.5">ORouter Gemini 2.5</option>
+                                    <option value="orouter_gemini2.0">ORouter Gemini 2.0</option>
+                                    <option value="orouter_qwen3">ORouter Qwen3</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <hr style="margin: 10px 0; border: none; border-top: 1px solid #dee2e6;">
+
+                        <!-- VAD设置 -->
+                        <div style="margin-bottom: 15px;">
+                            <strong style="color: #495057; font-size: 13px;">🎙️ VAD参数</strong>
+                            <div class="config-row" style="margin-top: 8px;">
+                                <label style="min-width: 80px; font-size: 12px;">检测阈值:</label>
+                                <input type="number" id="threshold" value="0.5" min="0" max="1" step="0.1"
+                                    style="width: 60px; font-size: 12px;">
+                                <span class="unit" style="font-size: 11px;">(0-1)</span>
+                            </div>
+                            <div class="config-row" style="margin-top: 6px;">
+                                <label style="min-width: 80px; font-size: 12px;">语音前缀:</label>
+                                <input type="number" id="prefixMs" value="128" min="0" step="16"
+                                    style="width: 60px; font-size: 12px;">
+                                <span class="unit" style="font-size: 11px;">ms</span>
+                            </div>
+                            <div class="config-row" style="margin-top: 6px;">
+                                <label style="min-width: 80px; font-size: 12px;">静音持续:</label>
+                                <input type="number" id="silenceMs" value="640" min="0" step="16"
+                                    style="width: 60px; font-size: 12px;">
+                                <span class="unit" style="font-size: 11px;">ms</span>
+                            </div>
+                            <div class="config-row" style="margin-top: 6px;">
+                                <label style="min-width: 80px; font-size: 12px;">ASR触发:</label>
+                                <input type="number" id="asrTriggerMs" value="256" min="0" step="16"
+                                    style="width: 60px; font-size: 12px;">
+                                <span class="unit" style="font-size: 11px;">ms</span>
+                            </div>
+                            <div class="config-row" style="margin-top: 6px;">
+                                <label style="min-width: 80px; font-size: 12px;">跳步间隔:</label>
+                                <input type="number" id="hopMs" value="16" min="8" step="8"
+                                    style="width: 60px; font-size: 12px;">
+                                <span class="unit" style="font-size: 11px;">ms</span>
+                            </div>
+                            <div class="config-row" style="margin-top: 6px;">
+                                <label style="min-width: 80px; font-size: 12px;">预取模式:</label>
+                                <label style="display: flex; align-items: center; cursor: pointer; font-size: 12px;">
+                                    <input type="checkbox" id="enablePrefetch" checked style="margin-right: 6px;">
+                                    启用Prefetch ASR
+                                </label>
+                            </div>
+                            <div class="config-row" style="margin-top: 10px;">
+                                <button class="primary" onclick="applyVADConfig()"
+                                    style="width: 100%; padding: 6px; font-size: 12px;">
+                                    ✅ 应用VAD配置
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 第二列：LLM Prompt -->
+                <div class="config-group">
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                        <h3 style="margin: 0;">🤖 LLM Prompt</h3>
+                        <button id="autoLLMToggle" onclick="toggleAutoLLM()"
+                            style="padding: 4px 8px; font-size: 11px; border-radius: 12px; border: 1px solid #ddd; background: #f8f9fa; color: #666; cursor: pointer; transition: all 0.3s;">
+                            <span id="autoLLMStatus">自动回复: 关</span>
+                        </button>
+                    </div>
+                    <div style="display: flex; flex-direction: column; flex: 1; gap: 15px;">
+                        <div style="flex: 1; min-height: 200px;">
+                            <textarea id="llmPrompt"
+                                style="width: 100%; height: 100%; padding: 10px; border: 1px solid #ced4da; border-radius: 4px; font-size: 13px; resize: none;"
+                                placeholder="在此输入LLM系统提示词...\n\n示例：\n你是一个专业的助手，请帮助用户整理和总结对话内容。"></textarea>
+                        </div>
+                        <button class="secondary" onclick="clearAll()" style="padding: 10px; font-size: 14px;">
+                            🗑️ 清空所有记录
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 第三列：ASR Prompt & Input/Output Rule -->
+                <div class="config-group">
+                    <h3 style="margin-bottom: 15px; flex-shrink: 0;">🎯 ASR & LLM Rules</h3>
+                    <div style="display: flex; flex-direction: column; flex: 1; gap: 10px; height: 100%;">
+                        <!-- ASR Prompt 区域 -->
+                        <div style="flex: 0 0 auto;">
+                            <h4 style="margin: 0 0 8px 0; font-size: 13px; color: #495057;">🎙️ ASR Prompt</h4>
+                            <textarea id="asrPrompt"
+                                style="width: 100%; height: 80px; padding: 8px; border: 1px solid #ced4da; border-radius: 4px; font-size: 12px; resize: none;"
+                                placeholder="ASR Prompt模板（在cache_asr_trigger和VAD end时发送）...\n\n支持变量：$0_asr, $1_asr, $0_llm, $1_llm, $user_interface\n\n示例：请识别以下语音，上下文：$0_asr"></textarea>
+                        </div>
+
+                        <!-- Input Rule 区域 -->
+                        <div style="flex: 1; display: flex; flex-direction: column; min-height: 0;">
+                            <h4 style="margin: 0 0 8px 0; font-size: 13px; color: #495057;">📝 Input Rule</h4>
+                            <textarea id="inputRule"
+                                style="width: 100%; height: 100%; padding: 8px; border: 1px solid #ced4da; border-radius: 4px; font-size: 12px; resize: none;"
+                                placeholder="LLM Input Rule模板...\n\n支持变量（按时间倒序）：\n$0_asr, $0_modasr - 最新一句话的原始/修改后文本\n$1_asr, $1_modasr - 倒数第二句话的原始/修改后文本\n$*_asr, $*_modasr - 全文拼接\n$0_llm, $1_llm - LLM输出（经过Output Rule处理）\n$*_llm - 所有LLM输出拼接\n$user_interface - 用户界面内容\n\n示例：\n{&quot;text&quot;: &quot;$1_asr\n$0_asr&quot;}"></textarea>
+                        </div>
+
+                        <!-- Output Rule 区域 -->
+                        <div style="flex: 1; display: flex; flex-direction: column; min-height: 0;">
+                            <h4 style="margin: 0 0 8px 0; font-size: 13px; color: #495057;">📤 Output Rule</h4>
+                            <textarea id="outputRule"
+                                style="width: 100%; height: 100%; padding: 8px; border: 1px solid #ced4da; border-radius: 4px; font-size: 12px; resize: none;"
+                                placeholder="Output Rule模板...\n\n从LLM输出提取内容，支持多种JSON格式：\n• ```json{...}```\n• ```{...}```\n• 直接的JSON对象 {...}\n\n然后使用变量提取，如：$a, $b\n支持数组访问：$a[0], $b[1]\n\n示例：\n$best_hyp"></textarea>
+                        </div>
+
+                        <div
+                            style="font-size: 11px; color: #666; background: #f8f9fa; padding: 6px; border-radius: 4px; flex-shrink: 0;">
+                            <strong>使用说明：</strong><br>
+                            • ASR: 在VAD trigger/end时发送给ASR API<br>
+                            • Input: $*_asr(全文), $0_asr(最新), $*_llm(全部LLM输出), $0_llm(最新LLM输出),
+                            $user_interface(用户界面内容)<br>
+                            • Output: 从LLM JSON响应中提取，支持$key, $key[index]格式
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 第四列：实时日志 -->
+                <div class="config-group" style="background: #1e1e1e;">
+                    <h3
+                        style="color: #0f0; margin-bottom: 15px; font-family: 'Courier New', monospace; font-size: 14px; flex-shrink: 0;">
+                        📋 实时日志</h3>
+                    <div id="settingsLog"
+                        style="flex: 1; overflow-y: auto; color: #0f0; font-family: 'Courier New', monospace; font-size: 12px; line-height: 1.4; white-space: pre-wrap; word-wrap: break-word; padding: 10px; background: #000; border-radius: 4px; max-height: calc(75vh - 180px); min-height: 300px;">
+                        <!-- 日志内容将显示在这里 -->
+                    </div>
+                </div>
+            </div>
+
+
+        </div>
+    </div>
+
+    <!-- 底部控制栏 -->
+    <div
+        style="position: fixed; bottom: 20px; left: 20px; z-index: 999; display: flex; gap: 10px; align-items: center;">
+        <!-- 录音按钮 -->
+        <button id="recordBtn" class="record-button" onclick="toggleRecording()">
+            <span class="record-icon">🎤</span>
+            <span class="record-text">开始录音</span>
+        </button>
+
+        <!-- 清空卡片按钮 -->
+        <button class="clear-cards-button" onclick="clearCards()">
+            <span style="font-size: 18px;">🗑️</span>
+        </button>
+
+        <!-- 设置按钮 -->
+        <button class="settings-button" onclick="togglePanel()">
+            <span style="font-size: 18px;">⚙️</span>
+        </button>
+    </div>
+
+    <style>
+        .record-button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 8px 24px;
+            font-size: 14px;
+            font-weight: 600;
+            border-radius: 25px;
+            cursor: pointer;
+            box-shadow: 0 2px 10px rgba(102, 126, 234, 0.3);
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            height: 44px;
+        }
+
+        .record-button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .record-button.recording {
+            background: linear-gradient(135deg, #f93b1d 0%, #ea4c46 100%);
+            animation: pulse 1.5s infinite;
+        }
+
+        .record-button.recording .record-icon {
+            animation: blink 1s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 2px 10px rgba(249, 59, 29, 0.4);
+            }
+
+            50% {
+                box-shadow: 0 2px 15px rgba(249, 59, 29, 0.6);
+            }
+
+            100% {
+                box-shadow: 0 2px 10px rgba(249, 59, 29, 0.4);
+            }
+        }
+
+        @keyframes blink {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        .clear-cards-button {
+            background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+            color: white;
+            border: none;
+            padding: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 2px 10px rgba(220, 53, 69, 0.3);
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 44px;
+            height: 44px;
+        }
+
+        .clear-cards-button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 15px rgba(220, 53, 69, 0.4);
+        }
+    </style>
+
+    <!-- 主内容区域 -->
+    <div class="main-content">
+        <div class="events-container">
+            <!-- VAD事件 -->
+            <div class="events-section">
+                <h3>📊 实时VAD事件<button onclick="clearVADCards()"
+                        style="background: none; border: 1px solid #ddd; border-radius: 4px; padding: 2px 6px; font-size: 11px; margin-left: 10px; cursor: pointer; color: #666;">清空</button>
+                </h3>
+                <div class="events-content" id="vadEvents">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">🎤</div>
+                        <div>等待VAD事件...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ASR结果 -->
+            <div class="events-section">
+                <h3>🎯 ASR识别结果<button onclick="clearASRCards()"
+                        style="background: none; border: 1px solid #ddd; border-radius: 4px; padding: 2px 6px; font-size: 11px; margin-left: 10px; cursor: pointer; color: #666;">清空</button>
+                </h3>
+                <div class="events-content" id="asrResults">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">💬</div>
+                        <div>等待语音识别...</div>
+                    </div>
+                </div>
+                <div id="asrActions" style="display: none; padding: 10px; border-top: 1px solid #e9ecef;">
+                    <button class="primary" onclick="submitToLLM()"
+                        style="width: 100%; padding: 10px; font-size: 14px;">
+                        🤖 提交给LLM (<span id="selectedCount">0</span>个选中)
+                    </button>
+                </div>
+            </div>
+
+            <!-- LLM响应 -->
+            <div class="events-section">
+                <h3>🤖 LLM响应<button onclick="clearLLMCards()"
+                        style="background: none; border: 1px solid #ddd; border-radius: 4px; padding: 2px 6px; font-size: 11px; margin-left: 10px; cursor: pointer; color: #666;">清空</button>
+                </h3>
+                <div class="events-content" id="llmResponses">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">🤖</div>
+                        <div>LLM功能待开发...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 用户界面 -->
+            <div class="events-section">
+                <h3>👤 用户界面<button onclick="clearUserInterfaceCards()"
+                        style="background: none; border: 1px solid #ddd; border-radius: 4px; padding: 2px 6px; font-size: 11px; margin-left: 10px; cursor: pointer; color: #666;">清空</button>
+                </h3>
+                <div class="events-content">
+                    <textarea id="userInterface" readonly
+                        style="width: 100%; height: 100%; border: none; background: linear-gradient(135deg, #e1f5fe 0%, #b3e5fc 100%); padding: 15px; font-size: 13px; color: #01579b; line-height: 1.5; font-family: inherit; resize: none; outline: none;"
+                        placeholder="用户界面输出将显示在这里..."></textarea>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="vad/stream_vad.js"></script>
+    <script src="audio_client.js"></script>
+    <script src="debug.js"></script>
+    <script  crossorigin="anonymous"
+        data-clerk-publishable-key="pk_test_c29saWQtaHVza3ktODIuY2xlcmsuYWNjb3VudHMuZGV2JA"
+        src="https://unpkg.com/@clerk/clerk-js@latest/dist/clerk.browser.js" type="text/javascript"></script>
+
+    <script>
+        let isConnected = false;
+        let isRecording = false;
+        let vadInitialized = false;
+        let selectedASRCards = new Set();
+        let asrTextMap = new Map(); // 原始ASR文本
+        let asrPromptMap = new Map(); // 存储每个卡片对应的ASR prompt (cardId -> prompt)
+        let prefetchResults = new Map(); // 存储prefetch结果 (cardId -> result)
+        let llmResponsesData = []; // 存储所有LLM响应
+        let userInterfaceContent = ''; // 用户界面内容
+        let silenceTimer = null;
+        let lastVADEndTime = null;
+        let autoLLMEnabled = false;
+        let llmResponseCounter = 0;
+        let lastGeneratedASRPrompt = ''; // 存储最后一次生成的ASR prompt
+
+        // 句子序号管理
+        let nextSentenceNumber = 1; // 下一个可用的句子序号
+        let cardIdCounter = 0; // 卡片ID计数器
+
+        // Clerk 认证相关变量
+        let currentUser = null;
+        let authToken = null;
+        let isClerkInitialized = false;
+
+        // localStorage相关功能 - 设置持久化
+        function saveSettings() {
+            const settings = {
+                // 录音控制配置
+                silenceTimeoutSec: document.getElementById('silenceTimeoutSec').value,
+
+                // WebSocket和LLM配置
+                wsUrl: document.getElementById('wsUrl').value,
+                wsTicket: document.getElementById('wsTicket').value,
+                llmUrl: document.getElementById('llmUrl').value,
+                llmModel: document.getElementById('llmModel').value,
+                llmPrompt: document.getElementById('llmPrompt').value,
+                asrPrompt: document.getElementById('asrPrompt').value,
+                inputRule: document.getElementById('inputRule').value,
+                outputRule: document.getElementById('outputRule').value,
+
+                // VAD配置
+                threshold: document.getElementById('threshold').value,
+                prefixMs: document.getElementById('prefixMs').value,
+                silenceMs: document.getElementById('silenceMs').value,
+                asrTriggerMs: document.getElementById('asrTriggerMs').value,
+                hopMs: document.getElementById('hopMs').value,
+                enablePrefetch: document.getElementById('enablePrefetch').checked,
+
+                // 自动LLM状态
+                autoLLMEnabled: autoLLMEnabled
+            };
+
+            localStorage.setItem('app-settings', JSON.stringify(settings));
+            log('设置已保存', 'info');
+        }
+
+        function loadSettings() {
+            const saved = localStorage.getItem('app-settings');
+            if (!saved) return;
+
+            try {
+                const settings = JSON.parse(saved);
+
+                // 恢复录音控制配置
+                if (settings.silenceTimeoutSec) document.getElementById('silenceTimeoutSec').value = settings.silenceTimeoutSec;
+
+                // 恢复WebSocket和LLM配置
+                if (settings.wsUrl) document.getElementById('wsUrl').value = settings.wsUrl;
+                if (settings.wsTicket) document.getElementById('wsTicket').value = settings.wsTicket;
+                if (settings.llmUrl) document.getElementById('llmUrl').value = settings.llmUrl;
+                if (settings.llmModel) document.getElementById('llmModel').value = settings.llmModel;
+                if (settings.llmPrompt) document.getElementById('llmPrompt').value = settings.llmPrompt;
+                if (settings.asrPrompt) document.getElementById('asrPrompt').value = settings.asrPrompt;
+                if (settings.inputRule) document.getElementById('inputRule').value = settings.inputRule;
+                if (settings.outputRule) document.getElementById('outputRule').value = settings.outputRule;
+
+                // 恢复VAD配置
+                if (settings.threshold) document.getElementById('threshold').value = settings.threshold;
+                if (settings.prefixMs) document.getElementById('prefixMs').value = settings.prefixMs;
+                if (settings.silenceMs) document.getElementById('silenceMs').value = settings.silenceMs;
+                if (settings.asrTriggerMs) document.getElementById('asrTriggerMs').value = settings.asrTriggerMs;
+                if (settings.hopMs) document.getElementById('hopMs').value = settings.hopMs;
+                if (settings.enablePrefetch !== undefined) document.getElementById('enablePrefetch').checked = settings.enablePrefetch;
+
+                // 恢复自动LLM状态
+                if (settings.autoLLMEnabled) {
+                    autoLLMEnabled = true;
+                    const toggleBtn = document.getElementById('autoLLMToggle');
+                    const statusSpan = document.getElementById('autoLLMStatus');
+                    toggleBtn.style.background = '#4caf50';
+                    toggleBtn.style.color = 'white';
+                    toggleBtn.style.borderColor = '#4caf50';
+                    statusSpan.textContent = '自动回复: 开';
+                }
+
+                log('设置已恢复', 'success');
+            } catch (error) {
+                log('加载设置失败: ' + error.message, 'error');
+            }
+        }
+
+        // 设置监听器
+        function setupSettingsListeners() {
+            // 录音控制配置变化监听
+            document.getElementById('silenceTimeoutSec').addEventListener('input', saveSettings);
+
+            // WebSocket和LLM配置变化监听
+            document.getElementById('wsUrl').addEventListener('input', saveSettings);
+            document.getElementById('wsTicket').addEventListener('input', saveSettings);
+            document.getElementById('llmUrl').addEventListener('input', saveSettings);
+            document.getElementById('llmModel').addEventListener('change', saveSettings);
+            document.getElementById('llmPrompt').addEventListener('input', saveSettings);
+            document.getElementById('asrPrompt').addEventListener('input', saveSettings);
+            document.getElementById('inputRule').addEventListener('input', saveSettings);
+            document.getElementById('outputRule').addEventListener('input', saveSettings);
+
+            // VAD配置变化监听
+            document.getElementById('threshold').addEventListener('input', saveSettings);
+            document.getElementById('prefixMs').addEventListener('input', saveSettings);
+            document.getElementById('silenceMs').addEventListener('input', saveSettings);
+            document.getElementById('asrTriggerMs').addEventListener('input', saveSettings);
+            document.getElementById('hopMs').addEventListener('input', saveSettings);
+            document.getElementById('enablePrefetch').addEventListener('change', saveSettings);
+        }
+
+        // =============================================================================
+        // CLERK 认证相关功能
+        // =============================================================================
+
+        // 初始化 Clerk SDK
+        async function initializeClerk() {
+            // 检查 Clerk 是否可用
+            if (window.clerkAvailable === false) {
+                log('Clerk SDK 不可用: 未配置有效的 Publishable Key', 'warning');
+                document.getElementById('clerk-loading').style.display = 'none';
+                document.getElementById('clerk-unavailable').style.display = 'block';
+                return;
+            }
+
+            try {
+                log('正在初始化 Clerk SDK...', 'info');
+
+                // 等待 Clerk SDK 加载
+                let attempts = 0;
+                const maxAttempts = 100; // 10秒超时
+
+                await new Promise((resolve, reject) => {
+                    const checkClerk = () => {
+                        attempts++;
+                        if (window.Clerk) {
+                            resolve();
+                        } else if (attempts >= maxAttempts) {
+                            reject(new Error('Clerk SDK 加载超时'));
+                        } else {
+                            setTimeout(checkClerk, 100);
+                        }
+                    };
+                    checkClerk();
+                });
+
+                await window.Clerk.load();
+                isClerkInitialized = true;
+                log('Clerk SDK 加载成功', 'success');
+
+                // 隐藏加载状态
+                document.getElementById('clerk-loading').style.display = 'none';
+
+                // 检查认证状态
+                checkAuthState();
+
+                // 监听认证状态变化
+                window.Clerk.addListener('user', () => checkAuthState());
+                window.Clerk.addListener('session', () => checkAuthState());
+
+            } catch (error) {
+                log(`Clerk SDK 加载失败: ${error.message}`, 'error');
+
+                // 隐藏加载状态，显示不可用状态
+                document.getElementById('clerk-loading').style.display = 'none';
+                document.getElementById('clerk-unavailable').style.display = 'block';
+            }
+        }
+
+        // 检查认证状态
+        function checkAuthState() {
+            if (!isClerkInitialized) return;
+
+            const user = window.Clerk.user;
+            const session = window.Clerk.session;
+
+            if (user && session) {
+                // 已登录状态
+                currentUser = user;
+                document.getElementById('clerk-signed-out').style.display = 'none';
+                document.getElementById('clerk-signed-in').style.display = 'block';
+
+                // 显示用户信息
+                const userInfo = document.getElementById('clerk-user-info');
+                userInfo.innerHTML =
+                    `<strong>用户:</strong> ${user.fullName || user.primaryEmailAddress?.emailAddress || user.id}<br>` +
+                    `<strong>ID:</strong> ${user.id}`;
+
+                log(`用户已登录: ${user.fullName || user.id}`, 'success');
+
+            } else {
+                // 未登录状态
+                currentUser = null;
+                authToken = null;
+                document.getElementById('clerk-signed-out').style.display = 'block';
+                document.getElementById('clerk-signed-in').style.display = 'none';
+
+                // 隐藏状态消息
+                document.getElementById('clerk-auth-status').style.display = 'none';
+
+                log('用户未登录，请先完成认证', 'info');
+            }
+        }
+
+        // Clerk 登录
+        function signInClerk() {
+            try {
+                if (!isClerkInitialized) {
+                    log('Clerk 尚未初始化', 'error');
+                    return;
+                }
+                window.Clerk.openSignIn();
+            } catch (error) {
+                log(`登录失败: ${error.message}`, 'error');
+            }
+        }
+
+        // Clerk 注册
+        function signUpClerk() {
+            try {
+                if (!isClerkInitialized) {
+                    log('Clerk 尚未初始化', 'error');
+                    return;
+                }
+                window.Clerk.openSignUp();
+            } catch (error) {
+                log(`注册失败: ${error.message}`, 'error');
+            }
+        }
+
+        // Clerk 退出登录
+        async function signOutClerk() {
+            try {
+                if (!isClerkInitialized) {
+                    log('Clerk 尚未初始化', 'error');
+                    return;
+                }
+                await window.Clerk.signOut();
+                log('已成功退出登录', 'info');
+            } catch (error) {
+                log(`退出登录失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 获取 JWT Token
+        async function getJWTToken() {
+            if (!window.Clerk.session) {
+                log('没有活动会话，请重新登录', 'error');
+                showClerkStatus('请重新登录', 'error');
+                return;
+            }
+
+            log('正在获取 Clerk JWT Token...', 'info');
+            showClerkStatus('正在获取 Token...', 'info');
+
+            try {
+                // 获取默认 token
+                const token = await window.Clerk.session.getToken();
+
+                if (!token) {
+                    throw new Error('无法获取 JWT Token');
+                }
+
+                authToken = token;
+                log(`JWT Token 获取成功: ${token.substring(0, 30)}...`, 'success');
+                showClerkStatus('JWT Token 获取成功！', 'success');
+
+                // 自动复制 token 到剪贴板
+                try {
+                    await navigator.clipboard.writeText(token);
+                    log('Token 已复制到剪贴板', 'info');
+                } catch (e) {
+                    log('无法自动复制 token', 'warning');
+                }
+
+            } catch (error) {
+                log(`Token 获取失败: ${error.message}`, 'error');
+                showClerkStatus(`Token 获取失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 显示 Clerk 认证状态
+        function showClerkStatus(message, type) {
+            const statusEl = document.getElementById('clerk-auth-status');
+            if (!statusEl) return;
+
+            statusEl.style.display = 'block';
+            statusEl.textContent = message;
+
+            const colors = {
+                info: '#4299e1',
+                success: '#48bb78',
+                error: '#f56565',
+                warning: '#ed8936'
+            };
+
+            statusEl.style.backgroundColor = `${colors[type]}20`;
+            statusEl.style.borderLeft = `3px solid ${colors[type]}`;
+            statusEl.style.color = colors[type];
+
+            // 自动隐藏成功和信息消息
+            if (type === 'success' || type === 'info') {
+                setTimeout(() => {
+                    statusEl.style.display = 'none';
+                }, 3000);
+            }
+        }
+
+        // 自动LLM功能
+        function toggleAutoLLM() {
+            autoLLMEnabled = !autoLLMEnabled;
+            const toggleBtn = document.getElementById('autoLLMToggle');
+            const statusSpan = document.getElementById('autoLLMStatus');
+
+            if (autoLLMEnabled) {
+                toggleBtn.style.background = '#4caf50';
+                toggleBtn.style.color = 'white';
+                toggleBtn.style.borderColor = '#4caf50';
+                statusSpan.textContent = '自动回复: 开';
+                log('自动LLM回复已启用', 'success');
+            } else {
+                toggleBtn.style.background = '#f8f9fa';
+                toggleBtn.style.color = '#666';
+                toggleBtn.style.borderColor = '#ddd';
+                statusSpan.textContent = '自动回复: 关';
+                log('自动LLM回复已关闭', 'info');
+            }
+
+            // 保存设置
+            saveSettings();
+        }
+
+        async function callLLMForASR(asrText) {
+            if (!autoLLMEnabled) return;
+
+            const systemPrompt = document.getElementById('llmPrompt').value || '你是一个有用的助手。';
+            const inputRule = document.getElementById('inputRule').value;
+
+            // 使用Input Rule处理（不传selectedCards，表示自动模式）
+            const userInput = processInputRule(inputRule, null);
+
+            log(`自动调用LLM (原文: "${asrText}")`, 'info');
+            log(`处理后输入: "${userInput}"`, 'info');
+
+            // 实际的LLM API调用
+            const llmContainer = document.getElementById('llmResponses');
+            if (llmContainer.querySelector('.empty-state')) {
+                llmContainer.innerHTML = '';
+            }
+
+            // 创建加载中的响应卡片
+            llmResponseCounter++;
+            const loadingCardId = `llm-auto-loading-${llmResponseCounter}`;
+            const loadingCard = document.createElement('div');
+            loadingCard.className = 'event-card llm-response-card';
+            loadingCard.id = loadingCardId;
+            loadingCard.innerHTML = `
+                <div class="event-header">${formatCurrentTime()} - 自动回复处理中...</div>
+                <div class="llm-summary">
+                    <div style="display: flex; align-items: center; gap: 10px; padding: 10px; background: rgba(76, 175, 80, 0.1); border-left: 4px solid #4caf50; border-radius: 4px;">
+                        <span class="spinner"></span>
+                        <strong>🤖 正在自动生成响应...</strong>
+                    </div>
+                </div>
+            `;
+            llmContainer.appendChild(loadingCard);
+            llmContainer.scrollTop = llmContainer.scrollHeight;
+
+            try {
+                const llmUrl = document.getElementById('llmUrl').value || 'https://api.frapp.ai/llm';
+                const llmModel = document.getElementById('llmModel').value || 'gemini2.5';
+
+                const response = await fetch(llmUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        system_prompt: systemPrompt,
+                        content: userInput,
+                        model: llmModel,
+                        temperature: 0.7,
+                        max_tokens: 1000
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const result = await response.json();
+                log('自动LLM响应成功', 'success');
+
+                // 移除加载卡片
+                loadingCard.remove();
+
+                // 创建真实的响应卡片
+                createLLMResponseCard(result, userInput, systemPrompt, true);
+
+            } catch (error) {
+                log(`自动LLM请求失败: ${error.message}`, 'error');
+
+                // 移除加载卡片
+                loadingCard.remove();
+
+                // 创建错误响应卡片
+                createLLMErrorCard(error, userInput, systemPrompt, true);
+            }
+        }
+
+        // 创建LLM响应卡片的通用函数
+        function createLLMResponseCard(result, userInput, systemPrompt, isAuto = false) {
+            const llmContainer = document.getElementById('llmResponses');
+            llmResponseCounter++;
+
+            // 处理Output Rule
+            const outputRule = document.getElementById('outputRule').value;
+            const processedOutput = processOutputRule(result.response, outputRule);
+
+            // 将处理后的输出存储到llmResponsesData
+            const responseData = {
+                id: `llm-${llmResponseCounter}`,
+                response: result.response,
+                processedOutput: processedOutput,
+                modifiedProcessedOutput: processedOutput, // 初始时与processedOutput相同，可被用户编辑
+                timestamp: formatCurrentTime(),
+                isAuto: isAuto
+            };
+            llmResponsesData.push(responseData);
+
+            // 将处理后的输出添加到用户界面
+            addToUserInterface(responseData.modifiedProcessedOutput, responseData.timestamp, isAuto);
+
+            const responseCard = document.createElement('div');
+            responseCard.className = 'event-card llm-response-card';
+            const cardId = `llm-${llmResponseCounter}`;
+            responseCard.id = cardId;
+
+            const performance = result._performance;
+            const modelInfo = `${performance?.model || 'Unknown'} (${performance?.provider || 'Unknown'})`;
+            const duration = performance?.total_duration_ms ? `${performance.total_duration_ms}ms` : 'N/A';
+
+            const responsePreview = processedOutput.length > 100 ?
+                processedOutput.substring(0, 100) + '...' : processedOutput;
+
+            const autoLabel = isAuto ? ' [自动]' : '';
+
+            responseCard.innerHTML = `
+                <div class="event-header">${formatCurrentTime()} - ${modelInfo} (${duration})${autoLabel}</div>
+                
+                <!-- 收起状态 - 显示可编辑摘要 -->
+                <div class="llm-summary">
+                    <div style="margin-bottom: 10px;">
+                        <strong style="color: #2e7d32; font-size: 13px;">🎯 处理后输出 (可编辑):</strong><br>
+                        <div class="llm-processed-output-summary" contenteditable="true" style="margin-top: 8px; white-space: pre-wrap; line-height: 1.5; color: #333; font-size: 13px; background: rgba(76, 175, 80, 0.05); border: 1px solid rgba(76, 175, 80, 0.2); border-radius: 4px; padding: 8px; transition: all 0.2s;" data-card-id="${cardId}" onblur="updateLLMContent(this)" onclick="event.stopPropagation()">${processedOutput}</div>
+                    </div>
+                </div>
+                
+                <!-- 展开状态 - 显示完整信息 -->
+                <div class="llm-details">
+                    <div style="margin-bottom: 15px;">
+                        <strong style="color: #2e7d32; font-size: 14px;">🎯 处理后输出 (可编辑):</strong>
+                        <div class="llm-processed-output" contenteditable="true" style="margin-top: 8px; white-space: pre-wrap; line-height: 1.6; color: #333; font-size: 14px; background: rgba(76, 175, 80, 0.05); border: 1px solid rgba(76, 175, 80, 0.2); border-radius: 4px; padding: 10px; transition: all 0.2s;" data-card-id="${cardId}" onblur="updateLLMContent(this)" onclick="event.stopPropagation()">${processedOutput}</div>
+                    </div>
+                
+                    <div style="margin-bottom: 15px;">
+                        <strong style="color: #2e7d32; font-size: 14px;">🤖 LLM原始返回:</strong>
+                        <div style="margin-top: 8px; white-space: pre-wrap; line-height: 1.6; color: #333; font-size: 14px;">${result.response}</div>
+                    </div>
+                    
+                    <div style="margin-bottom: 12px;">
+                        <strong style="color: #1565c0; font-size: 13px;">📝 您的请求:</strong>
+                        <div style="margin-top: 6px; font-size: 13px; color: #555; white-space: pre-wrap; line-height: 1.5;">${userInput}</div>
+                    </div>
+                    
+                    <div>
+                        <strong style="color: #7b1fa2; font-size: 12px;">⚙️ System Prompt:</strong>
+                        <div style="margin-top: 4px; font-size: 12px; color: #666; white-space: pre-wrap; line-height: 1.4;">${systemPrompt}</div>
+                    </div>
+                </div>
+                
+                <div class="llm-toggle-indicator"></div>
+            `;
+
+            // 添加点击事件
+            responseCard.onclick = function () {
+                toggleLLMCard(cardId);
+            };
+
+            llmContainer.appendChild(responseCard);
+            llmContainer.scrollTop = llmContainer.scrollHeight;
+        }
+
+        // 添加内容到用户界面
+        function addToUserInterface(content, timestamp, isAuto = false) {
+            const userInterfaceTextarea = document.getElementById('userInterface');
+
+            // 更新用户界面内容变量
+            userInterfaceContent += content;
+
+            // 直接更新textarea的内容
+            userInterfaceTextarea.value = userInterfaceContent;
+
+            // 滚动到底部
+            userInterfaceTextarea.scrollTop = userInterfaceTextarea.scrollHeight;
+
+            log(`用户界面已添加内容: "${content}"`, 'success');
+        }
+
+        function createLLMErrorCard(error, userInput, systemPrompt, isAuto = false) {
+            const llmContainer = document.getElementById('llmResponses');
+            llmResponseCounter++;
+
+            const errorCard = document.createElement('div');
+            errorCard.className = 'event-card llm-response-card';
+            const errorCardId = `llm-error-${llmResponseCounter}`;
+            errorCard.id = errorCardId;
+            errorCard.style.borderColor = '#f44336';
+            errorCard.style.background = 'linear-gradient(135deg, #ffebee 0%, #ffcdd2 100%)';
+
+            const errorPreview = error.message.length > 80 ?
+                error.message.substring(0, 80) + '...' : error.message;
+
+            const autoLabel = isAuto ? ' [自动]' : '';
+
+            errorCard.innerHTML = `
+                <div class="event-header">${formatCurrentTime()} - 请求失败${autoLabel}</div>
+                
+                <!-- 收起状态 - 显示错误摘要 -->
+                <div class="llm-summary">
+                    <div style="color: #d32f2f; padding: 10px; background: rgba(244, 67, 54, 0.1); border-left: 4px solid #f44336; border-radius: 4px;">
+                        <strong>❌ 错误:</strong><br>
+                        <span style="font-size: 13px; margin-top: 5px; display: block; font-style: italic;">${errorPreview}</span>
+                    </div>
+                </div>
+                
+                <!-- 展开状态 - 显示完整错误信息和请求详情 -->
+                <div class="llm-details">
+                    <div style="margin-bottom: 15px;">
+                        <strong style="color: #d32f2f; font-size: 14px;">❌ 完整错误信息:</strong>
+                        <div style="margin-top: 8px; font-size: 14px; color: #d32f2f; white-space: pre-wrap; line-height: 1.5;">${error.message}</div>
+                    </div>
+                    
+                    <div style="margin-bottom: 12px;">
+                        <strong style="color: #1565c0; font-size: 13px;">📝 您的请求:</strong>
+                        <div style="margin-top: 6px; font-size: 13px; color: #555; white-space: pre-wrap; line-height: 1.5;">${userInput}</div>
+                    </div>
+                    
+                    <div>
+                        <strong style="color: #7b1fa2; font-size: 12px;">⚙️ System Prompt:</strong>
+                        <div style="margin-top: 4px; font-size: 12px; color: #666; white-space: pre-wrap; line-height: 1.4;">${systemPrompt}</div>
+                    </div>
+                </div>
+                
+                <div class="llm-toggle-indicator"></div>
+            `;
+
+            // 添加点击事件
+            errorCard.onclick = function () {
+                toggleLLMCard(errorCardId);
+            };
+
+            llmContainer.appendChild(errorCard);
+            llmContainer.scrollTop = llmContainer.scrollHeight;
+        }
+
+        // 切换控制面板
+        function togglePanel() {
+            const panel = document.getElementById('controlPanel');
+            panel.classList.toggle('show');
+        }
+
+        // 测试票据输入框是否可见
+        function testTicketField() {
+            const wsTicketField = document.getElementById('wsTicket');
+            const wsUrl = document.getElementById('wsUrl');
+            const panel = document.getElementById('controlPanel');
+
+            console.log('票据输入框测试:');
+            console.log('- wsTicket字段存在:', !!wsTicketField);
+            console.log('- wsUrl字段存在:', !!wsUrl);
+            console.log('- 控制面板存在:', !!panel);
+            console.log('- wsUrl当前值:', wsUrl ? wsUrl.value : 'null');
+            console.log('- wsTicket当前值:', wsTicketField ? wsTicketField.value : 'null');
+
+            // 强制显示控制面板来检查
+            if (panel && !panel.classList.contains('show')) {
+                panel.classList.add('show');
+                console.log('已强制显示控制面板');
+            }
+        }
+
+        // 日志函数
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString('zh-CN', {
+                hour12: false,
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+            const logEl = document.getElementById('settingsLog');
+            if (!logEl) return;
+
+            const color = type === 'error' ? '#ff4444' :
+                type === 'success' ? '#44ff44' :
+                    type === 'warning' ? '#ffaa44' : '#44ffff';
+            logEl.innerHTML += `<span style="color: ${color}">[${timestamp}] ${message}</span>\n`;
+            logEl.scrollTop = logEl.scrollHeight;
+
+            // 限制日志长度
+            const lines = logEl.innerHTML.split('\n');
+            if (lines.length > 100) {
+                logEl.innerHTML = lines.slice(-100).join('\n');
+            }
+        }
+
+        // 更新连接状态指示器
+        function updateConnectionStatus(status) {
+            const indicator = document.querySelector('.status-indicator');
+            if (indicator) {
+                indicator.className = `status-indicator ${status}`;
+            }
+        }
+
+        // 获取WebSocket票据
+        async function getWebSocketTicket() {
+            try {
+                log('正在获取WebSocket票据...', 'info');
+
+                const headers = {
+                    'Content-Type': 'application/json'
+                };
+
+                // 如果有JWT Token，则使用认证方式
+                if (authToken) {
+                    headers['Authorization'] = `Bearer ${authToken}`;
+                    log('使用JWT Token认证获取票据', 'info');
+                } else {
+                    log('⚠️ 无JWT Token，尝试无认证方式获取票据（可能失败）', 'warning');
+                }
+
+                const response = await fetch('/api/ws/ticket', {
+                    method: 'POST',
+                    headers: headers
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                const ticket = data.ticket;
+
+                if (ticket) {
+                    document.getElementById('wsTicket').value = ticket;
+                    saveSettings(); // 保存票据到本地存储
+                    log('WebSocket票据获取成功', 'success');
+                    log(`票据有效期: ${data.expires_in || 'N/A'} 秒`, 'info');
+
+                    if (!authToken) {
+                        log('💡 提示: 建议配置Clerk认证以获得更好的安全性', 'info');
+                    }
+                } else {
+                    throw new Error('响应中没有找到票据');
+                }
+
+            } catch (error) {
+                log(`获取WebSocket票据失败: ${error.message}`, 'error');
+
+                // 如果是401错误且有authToken，可能是token过期
+                if (error.message.includes('401') && authToken) {
+                    log('JWT Token 可能已过期，请重新获取', 'warning');
+                } else if (error.message.includes('401') && !authToken) {
+                    log('需要认证才能获取票据，请先配置Clerk并完成登录', 'warning');
+                }
+            }
+        }
+
+        // 测试WebSocket连接
+        async function testWebSocketConnection() {
+            let url = document.getElementById('wsUrl').value;
+            if (!url) {
+                log('请输入WebSocket服务器地址', 'error');
+                return;
+            }
+
+            // 转换相对路径为完整的WebSocket URL
+            if (url.startsWith('/')) {
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const host = window.location.host;
+                url = `${protocol}//${host}${url}`;
+            }
+
+            log(`测试连接: ${url}`, 'info');
+
+            try {
+                const testWs = new WebSocket(url);
+
+                const timeout = setTimeout(() => {
+                    testWs.close();
+                    log('连接测试超时', 'error');
+                }, 5000);
+
+                testWs.onopen = () => {
+                    clearTimeout(timeout);
+                    log('连接测试成功! 服务器可访问', 'success');
+                    testWs.close();
+                };
+
+                testWs.onerror = (error) => {
+                    clearTimeout(timeout);
+                    log('连接测试失败: 服务器不可访问', 'error');
+                };
+
+                testWs.onclose = () => {
+                    clearTimeout(timeout);
+                };
+            } catch (error) {
+                log(`连接测试失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 应用VAD配置
+        async function applyVADConfig() {
+            try {
+                log('正在应用VAD配置...', 'info');
+
+                // 销毁旧的VAD实例
+                if (window.globalStreamingVAD) {
+                    window.globalStreamingVAD.destroy();
+                    window.globalStreamingVAD = null;
+                }
+
+                // 获取新的VAD配置参数
+                const vadConfig = {
+                    hopMs: parseInt(document.getElementById('hopMs').value),
+                    threshold: parseFloat(document.getElementById('threshold').value),
+                    prefixMs: parseInt(document.getElementById('prefixMs').value),
+                    silenceMs: parseInt(document.getElementById('silenceMs').value),
+                    asrTriggerMs: parseInt(document.getElementById('asrTriggerMs').value),
+                    enablePrefetch: document.getElementById('enablePrefetch').checked,
+                    sampleRate: 16000
+                };
+
+                // 创建新的VAD实例
+                const config = new window.VADConfig(vadConfig);
+                window.globalStreamingVAD = new window.StreamingVAD(config);
+                await window.globalStreamingVAD.init();
+                window.vadEvents = [];
+
+                vadInitialized = true;
+                log('VAD配置已应用', 'success');
+
+                // 保存设置
+                saveSettings();
+            } catch (error) {
+                log(`应用VAD配置失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 初始化VAD（页面加载时自动执行）
+        async function initVAD() {
+            try {
+                log('正在初始化VAD...', 'info');
+
+                const vadConfig = {
+                    hopMs: parseInt(document.getElementById('hopMs').value),
+                    threshold: parseFloat(document.getElementById('threshold').value),
+                    prefixMs: parseInt(document.getElementById('prefixMs').value),
+                    silenceMs: parseInt(document.getElementById('silenceMs').value),
+                    asrTriggerMs: parseInt(document.getElementById('asrTriggerMs').value),
+                    enablePrefetch: document.getElementById('enablePrefetch').checked,
+                    sampleRate: 16000
+                };
+
+                const config = new window.VADConfig(vadConfig);
+                window.globalStreamingVAD = new window.StreamingVAD(config);
+                await window.globalStreamingVAD.init();
+                window.vadEvents = [];
+
+                vadInitialized = true;
+                log('VAD初始化成功', 'success');
+            } catch (error) {
+                log(`VAD初始化失败: ${error.message}`, 'error');
+            }
+        }
+
+        // 添加加载动画样式
+        const spinnerStyle = document.createElement('style');
+        spinnerStyle.textContent = `
+            .spinner {
+                display: inline-block;
+                width: 14px;
+                height: 14px;
+                border: 2px solid #ffffff;
+                border-radius: 50%;
+                border-top-color: transparent;
+                animation: spin 0.8s linear infinite;
+                margin-right: 6px;
+            }
+            @keyframes spin {
+                to { transform: rotate(360deg); }
+            }
+        `;
+        document.head.appendChild(spinnerStyle);
+
+        // 切换录音状态
+        async function toggleRecording() {
+            console.log('toggleRecording 被调用, isRecording:', isRecording);
+            log('录音按钮被点击', 'info');
+
+            if (isRecording) {
+                await handleStopRecording();
+            } else {
+                await handleStartRecording();
+            }
+        }
+
+        // 开始录音处理
+        async function handleStartRecording() {
+            const recordBtn = document.getElementById('recordBtn');
+            const originalBtnText = recordBtn.querySelector('.record-text').textContent;
+
+            try {
+                // 显示加载动画
+                recordBtn.querySelector('.record-text').innerHTML = '<span class="spinner"></span>正在连接...';
+
+                // 先连接WebSocket
+                let url = document.getElementById('wsUrl').value;
+                if (!url) {
+                    throw new Error('请输入WebSocket服务器地址');
+                }
+
+                // 转换相对路径为完整的WebSocket URL
+                if (url.startsWith('/')) {
+                    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                    const host = window.location.host;
+                    url = `${protocol}//${host}${url}`;
+                }
+
+                log(`正在连接WebSocket: ${url}`, 'info');
+
+                // 如果已连接，先断开
+                if (isConnected) {
+                    window.disconnectWebSocket();
+                    isConnected = false;
+                    await new Promise(resolve => setTimeout(resolve, 100)); // 等待断开完成
+                }
+
+                // 获取票据
+                const ticket = document.getElementById('wsTicket').value;
+                if (!ticket || !ticket.trim()) {
+                    throw new Error('请先获取WebSocket票据');
+                }
+
+                // 连接WebSocket 
+                const wsSuccess = await window.connectWebSocket(url, ticket.trim());
+                if (!wsSuccess) {
+                    throw new Error('WebSocket连接失败');
+                }
+
+                isConnected = true;
+                log('WebSocket连接成功', 'success');
+
+                // 重置VAD状态
+                if (window.globalStreamingVAD) {
+                    window.globalStreamingVAD.reset();
+                    window.vadEvents = [];
+                    log('VAD状态已重置', 'info');
+                }
+
+                // 清空卡片内容
+                clearCards();
+
+                // 开始录音
+                log('正在启动录音...', 'info');
+                const recordSuccess = await window.startRecording();
+
+                if (recordSuccess) {
+                    isRecording = true;
+                    const timeoutSec = parseInt(document.getElementById('silenceTimeoutSec').value) || 10;
+                    log('录音开始，音频流传输中...', 'success');
+                    log(`提示：静音超过${timeoutSec}秒将自动停止录音`, 'info');
+
+                    // 清除之前的计时器
+                    clearTimeout(silenceTimer);
+                    silenceTimer = null;
+                    lastVADEndTime = null;
+
+                    // 更新悬浮按钮状态
+                    const recordBtn = document.getElementById('recordBtn');
+                    recordBtn.classList.add('recording');
+                    recordBtn.querySelector('.record-text').textContent = '停止录音';
+                    recordBtn.querySelector('.record-icon').textContent = '⏹';
+                    recordBtn.disabled = false;
+                } else {
+                    throw new Error('录音启动失败');
+                }
+            } catch (error) {
+                log(`开始录音失败: ${error.message}`, 'error');
+
+                // 恢复悬浮按钮状态
+                const recordBtn = document.getElementById('recordBtn');
+                recordBtn.classList.remove('recording');
+                recordBtn.querySelector('.record-text').textContent = '开始录音';
+                recordBtn.querySelector('.record-icon').textContent = '🎤';
+                recordBtn.disabled = false;
+
+                // 如果连接了但录音失败，断开连接
+                if (isConnected && !isRecording) {
+                    window.disconnectWebSocket();
+                    isConnected = false;
+                }
+            }
+        }
+
+        // 停止录音处理
+        async function handleStopRecording() {
+            try {
+                // 清除静音计时器
+                clearTimeout(silenceTimer);
+                silenceTimer = null;
+                lastVADEndTime = null;
+
+                await window.stopRecording();
+                isRecording = false;
+
+                // 等待一小段时间确保endAudioStream完成WebSocket关闭
+                setTimeout(() => {
+                    isConnected = window.isWebSocketConnected();
+                    if (isConnected) {
+                        log('WebSocket仍然连接中，手动断开', 'warning');
+                        window.disconnectWebSocket();
+                        isConnected = false;
+                    }
+                }, 500); // 给500ms时间让endAudioStream完成
+
+                log('录音已停止', 'info');
+
+                // 恢复悬浮按钮状态
+                const recordBtn = document.getElementById('recordBtn');
+                recordBtn.classList.remove('recording');
+                recordBtn.querySelector('.record-text').textContent = '开始录音';
+                recordBtn.querySelector('.record-icon').textContent = '🎤';
+                recordBtn.disabled = false;
+            } catch (error) {
+                log(`停止录音失败: ${error.message}`, 'error');
+
+                // 发生错误时确保连接状态正确
+                isConnected = false;
+                if (window.isWebSocketConnected && window.isWebSocketConnected()) {
+                    window.disconnectWebSocket();
+                }
+            }
+        }
+
+        // 切换ASR卡片选中状态
+        function toggleASRSelection(cardId) {
+            const card = document.getElementById(cardId);
+            if (!card || card.classList.contains('dropped')) return; // 被丢弃的卡片不能选中
+
+            if (selectedASRCards.has(cardId)) {
+                selectedASRCards.delete(cardId);
+                card.classList.remove('selected');
+            } else {
+                selectedASRCards.add(cardId);
+                card.classList.add('selected');
+            }
+
+            // 更新选中计数和显示提交按钮
+            const count = selectedASRCards.size;
+            document.getElementById('selectedCount').textContent = count;
+            document.getElementById('asrActions').style.display = count > 0 ? 'block' : 'none';
+        }
+
+        // ASR Prompt处理函数
+        function processASRPrompt(asrPromptTemplate) {
+            if (!asrPromptTemplate.trim()) {
+                return '';
+            }
+
+            // 获取所有ASR卡片，按时间顺序排序（最新的是0）
+            const allCards = Array.from(asrTextMap.keys()).sort((a, b) => {
+                const cardNumA = parseInt(a.split('-')[2]);
+                const cardNumB = parseInt(b.split('-')[2]);
+                return cardNumB - cardNumA; // 降序，最新的在前
+            });
+
+            log(`ASR Prompt处理: 原始模板 = "${asrPromptTemplate}"`, 'info');
+            log(`可用卡片: ${allCards.map(id => `${id}="${asrTextMap.get(id)}"`).join(', ')}`, 'info');
+
+            let processedPrompt = asrPromptTemplate;
+
+            // 处理 $*_asr - 全文拼接
+            const allAsrTexts = allCards.map(cardId => asrTextMap.get(cardId) || '').filter(text => text.trim()).join('');
+            processedPrompt = processedPrompt.replaceAll('$*_asr', allAsrTexts);
+
+            // 处理 $*_llm - 全文拼接（使用编辑后的输出）
+            const allLlmOutputs = llmResponsesData.map(data => data.modifiedProcessedOutput || '').filter(text => text.trim()).join('');
+            processedPrompt = processedPrompt.replaceAll('$*_llm', allLlmOutputs);
+
+            // 查找ASR Prompt中的数字索引变量
+            const indexMatches = asrPromptTemplate.match(/\$(\d+)_(asr|llm)/g);
+            const indices = new Set();
+            if (indexMatches) {
+                indexMatches.forEach(match => {
+                    const index = parseInt(match.match(/\d+/)[0]);
+                    indices.add(index);
+                });
+            }
+
+            // 替换所有索引变量
+            indices.forEach(i => {
+                // ASR 变量
+                const cardId = allCards[i];
+                const asrText = cardId ? (asrTextMap.get(cardId) || '') : '';
+                processedPrompt = processedPrompt.replaceAll(`$${i}_asr`, asrText);
+
+                // LLM 变量 - 使用编辑后的输出（按时间倒序）
+                const llmIndex = llmResponsesData.length - 1 - i; // 倒序索引
+                const llmData = llmIndex >= 0 ? llmResponsesData[llmIndex] : null;
+                const llmOutput = llmData ? (llmData.modifiedProcessedOutput || '') : '';
+                processedPrompt = processedPrompt.replaceAll(`$${i}_llm`, llmOutput);
+
+                log(`替换 $${i}_asr -> "${asrText}", $${i}_llm -> "${llmOutput}" (llmIndex: ${llmIndex}/${llmResponsesData.length})`, 'info');
+            });
+
+            // 替换 $user_interface
+            processedPrompt = processedPrompt.replaceAll('$user_interface', userInterfaceContent);
+
+            log(`ASR Prompt处理完成: "${processedPrompt}"`, 'success');
+            // 保存生成的prompt供后续使用
+            lastGeneratedASRPrompt = processedPrompt;
+            return processedPrompt;
+        }
+
+        // Input Rule处理函数
+        function processInputRule(inputRule, selectedCards = null) {
+            if (!inputRule.trim()) {
+                if (selectedCards) {
+                    // 手动选择的卡片，使用默认的'\n'.join方式
+                    const selectedTexts = [];
+                    selectedCards.forEach(cardId => {
+                        const text = asrTextMap.get(cardId);
+                        if (text) {
+                            selectedTexts.push(text);
+                        }
+                    });
+                    return selectedTexts.join('\n');
+                } else {
+                    // 自动LLM，使用最新一句话
+                    const allCards = Array.from(asrTextMap.keys()).sort((a, b) => {
+                        const cardNumA = parseInt(a.split('-')[2]); // asr-card-N 中的N
+                        const cardNumB = parseInt(b.split('-')[2]);
+                        return cardNumB - cardNumA; // 降序，最新的在前（cardIdCounter越大越新）
+                    });
+                    if (allCards.length > 0) {
+                        return asrTextMap.get(allCards[0]) || '';
+                    }
+                    return '';
+                }
+            }
+
+            // 获取所有ASR卡片，按时间顺序排序（最新的是0）
+            // 使用cardIdCounter排序，因为它是按时间递增的
+            const allCards = Array.from(asrTextMap.keys()).sort((a, b) => {
+                const cardNumA = parseInt(a.split('-')[2]); // asr-card-N 中的N
+                const cardNumB = parseInt(b.split('-')[2]);
+                return cardNumB - cardNumA; // 降序，最新的在前（cardIdCounter越大越新）
+            });
+
+            log(`Input Rule处理: 原始模板 = "${inputRule}"`, 'info');
+            log(`可用卡片: ${allCards.map(id => `${id}="${asrTextMap.get(id)}"`).join(', ')}`, 'info');
+
+            let processedRule = inputRule;
+
+            // 处理 $*_asr - 全文拼接
+            const allAsrTexts = allCards.map(cardId => asrTextMap.get(cardId) || '').filter(text => text.trim()).join('');
+            processedRule = processedRule.replaceAll('$*_asr', allAsrTexts);
+
+            // 处理 $*_llm - 全文拼接（使用编辑后的输出）
+            const allLlmOutputs = llmResponsesData.map(data => data.modifiedProcessedOutput || '').filter(text => text.trim()).join('');
+            processedRule = processedRule.replaceAll('$*_llm', allLlmOutputs);
+
+            // 查找Input Rule中的数字索引变量
+            const indexMatches = inputRule.match(/\$(\d+)_(asr|llm)/g);
+            const indices = new Set();
+            if (indexMatches) {
+                indexMatches.forEach(match => {
+                    const index = parseInt(match.match(/\d+/)[0]);
+                    indices.add(index);
+                });
+            }
+
+            // 替换所有索引变量
+            indices.forEach(i => {
+                // ASR 变量
+                const cardId = allCards[i]; // 按时间顺序，最新的是索引0
+                const asrText = cardId ? (asrTextMap.get(cardId) || '') : '';
+
+                processedRule = processedRule.replaceAll(`$${i}_asr`, asrText);
+
+                // LLM 变量 - 使用编辑后的输出（按时间倒序）
+                const llmIndex = llmResponsesData.length - 1 - i; // 倒序索引，最新的是索引0
+                const llmData = llmIndex >= 0 ? llmResponsesData[llmIndex] : null;
+                const llmOutput = llmData ? (llmData.modifiedProcessedOutput || '') : '';
+                processedRule = processedRule.replaceAll(`$${i}_llm`, llmOutput);
+
+                log(`替换 $${i}_asr -> "${asrText}", $${i}_llm -> "${llmOutput}" (llmIndex: ${llmIndex}/${llmResponsesData.length})`, 'info');
+            });
+
+            // 替换 $user_interface
+            processedRule = processedRule.replaceAll('$user_interface', userInterfaceContent);
+
+            log(`Input Rule处理完成: "${processedRule}"`, 'success');
+            return processedRule;
+        }
+
+        // Output Rule处理函数
+        function processOutputRule(llmResponse, outputRule) {
+            if (!outputRule.trim()) {
+                // 如果没有Output Rule，返回原始响应
+                return llmResponse;
+            }
+
+            log(`Output Rule处理: 原始模板 = "${outputRule}"`, 'info');
+            log(`LLM响应: "${llmResponse}"`, 'info');
+
+            // 尝试多种JSON格式解析
+            let jsonMatch = null;
+            let jsonContent = {};
+
+            // 1. 先尝试匹配 ```json{...}``` 格式
+            jsonMatch = llmResponse.match(/```json\s*([\s\S]*?)\s*```/);
+
+            // 2. 如果没找到，尝试匹配 ```{...}``` 格式
+            if (!jsonMatch) {
+                jsonMatch = llmResponse.match(/```\s*([\s\S]*?)\s*```/);
+            }
+
+            // 3. 如果还没找到，尝试直接解析整个响应中的JSON对象
+            if (!jsonMatch) {
+                // 寻找响应中的JSON对象（以{开头，以}结尾）
+                const jsonObjectMatch = llmResponse.match(/\{[\s\S]*\}/);
+                if (jsonObjectMatch) {
+                    jsonMatch = [null, jsonObjectMatch[0]]; // 构造匹配结果格式
+                }
+            }
+
+            if (jsonMatch) {
+                try {
+                    jsonContent = JSON.parse(jsonMatch[1]);
+                    log(`解析JSON成功: ${JSON.stringify(jsonContent)}`, 'success');
+                } catch (error) {
+                    log(`JSON解析失败: ${error.message}`, 'error');
+                    return llmResponse; // 解析失败，返回原始响应
+                }
+            } else {
+                log('未找到JSON内容，返回原始响应', 'warning');
+                return llmResponse;
+            }
+
+            let processedOutput = outputRule;
+
+            // 查找所有变量引用 $key 或 $key[index]
+            const variableMatches = outputRule.match(/\$([a-zA-Z_][a-zA-Z0-9_]*)\[?(\d+)?\]?/g);
+
+            if (variableMatches) {
+                variableMatches.forEach(match => {
+                    const fullMatch = match;
+                    const varMatch = match.match(/\$([a-zA-Z_][a-zA-Z0-9_]*)(\[(\d+)\])?/);
+
+                    if (varMatch) {
+                        const varName = varMatch[1];
+                        const arrayIndex = varMatch[3] ? parseInt(varMatch[3]) : null;
+
+                        if (jsonContent.hasOwnProperty(varName)) {
+                            let value = jsonContent[varName];
+
+                            // 如果指定了数组索引
+                            if (arrayIndex !== null) {
+                                if (Array.isArray(value) && arrayIndex < value.length) {
+                                    value = value[arrayIndex];
+                                } else {
+                                    value = ''; // 索引超出范围或不是数组
+                                }
+                            }
+
+                            // 如果value是对象或数组，转换为字符串
+                            if (typeof value === 'object') {
+                                value = JSON.stringify(value);
+                            } else {
+                                value = String(value);
+                            }
+
+                            processedOutput = processedOutput.replaceAll(fullMatch, value);
+                            log(`替换 ${fullMatch} -> "${value}"`, 'info');
+                        } else {
+                            // 变量不存在，替换为空字符串
+                            processedOutput = processedOutput.replaceAll(fullMatch, '');
+                            log(`变量 ${varName} 不存在，替换为空字符串`, 'warning');
+                        }
+                    }
+                });
+            }
+
+            log(`Output Rule处理完成: "${processedOutput}"`, 'success');
+            return processedOutput;
+        }
+
+        // 提交到LLM
+        async function submitToLLM() {
+            if (selectedASRCards.size === 0) {
+                log('请先选择要提交的ASR结果', 'warning');
+                return;
+            }
+
+            // 使用Input Rule处理选中的卡片
+            const inputRule = document.getElementById('inputRule').value;
+            const userInput = processInputRule(inputRule, selectedASRCards);
+            const systemPrompt = document.getElementById('llmPrompt').value || '你是一个有用的助手。';
+
+            log(`准备提交${selectedASRCards.size}条ASR结果到LLM`, 'info');
+            log(`System Prompt: ${systemPrompt}`, 'info');
+            log(`User Input: ${userInput}`, 'info');
+
+            // 实际的LLM API调用
+            const llmContainer = document.getElementById('llmResponses');
+            if (llmContainer.querySelector('.empty-state')) {
+                llmContainer.innerHTML = '';
+            }
+
+            // 创建加载中的响应卡片
+            const loadingCardId = `llm-loading-${Date.now()}`;
+            const loadingCard = document.createElement('div');
+            loadingCard.className = 'event-card llm-response-card';
+            loadingCard.id = loadingCardId;
+            loadingCard.innerHTML = `
+                <div class="event-header">${formatCurrentTime()} - 正在处理...</div>
+                <div class="llm-content">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span class="spinner"></span>
+                        <strong>🤖 正在请求LLM响应...</strong>
+                    </div>
+                </div>
+            `;
+            llmContainer.appendChild(loadingCard);
+            llmContainer.scrollTop = llmContainer.scrollHeight;
+
+            try {
+                log('正在请求LLM...', 'info');
+
+                const llmUrl = document.getElementById('llmUrl').value || 'https://api.frapp.ai/llm';
+                const llmModel = document.getElementById('llmModel').value || 'gemini2.5';
+
+                const response = await fetch(llmUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        system_prompt: systemPrompt,
+                        content: userInput,
+                        model: llmModel,
+                        temperature: 0.7,
+                        max_tokens: 1000
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const result = await response.json();
+                log('LLM响应成功', 'success');
+
+                // 移除加载卡片
+                loadingCard.remove();
+
+                // 使用统一的创建函数
+                createLLMResponseCard(result, userInput, systemPrompt, false);
+
+            } catch (error) {
+                log(`LLM请求失败: ${error.message}`, 'error');
+
+                // 移除加载卡片
+                loadingCard.remove();
+
+                // 使用统一的错误卡片创建函数
+                createLLMErrorCard(error, userInput, systemPrompt, false);
+            }
+
+            // 清除选中状态
+            selectedASRCards.forEach(cardId => {
+                const card = document.getElementById(cardId);
+                if (card) {
+                    card.classList.remove('selected');
+                }
+            });
+            selectedASRCards.clear();
+            document.getElementById('selectedCount').textContent = '0';
+            document.getElementById('asrActions').style.display = 'none';
+        }
+
+        // 清空四张卡片（不包括日志）
+        function clearCards() {
+            document.getElementById('vadEvents').innerHTML = '<div class="empty-state"><div class="empty-state-icon">🎤</div><div>等待VAD事件...</div></div>';
+            document.getElementById('asrResults').innerHTML = '<div class="empty-state"><div class="empty-state-icon">💬</div><div>等待语音识别...</div></div>';
+            document.getElementById('llmResponses').innerHTML = '<div class="empty-state"><div class="empty-state-icon">🤖</div><div>LLM功能待开发...</div></div>';
+            document.getElementById('userInterface').value = '';
+            selectedASRCards.clear();
+            asrTextMap.clear();
+            asrPromptMap.clear();
+            prefetchResults.clear();
+            llmResponsesData = [];
+            userInterfaceContent = '';
+
+            // 重置序号计数器
+            nextSentenceNumber = 1;
+            cardIdCounter = 0;
+
+            document.getElementById('selectedCount').textContent = '0';
+            document.getElementById('asrActions').style.display = 'none';
+            log('已清空卡片内容', 'info');
+        }
+
+        // 清空所有记录（包括日志）
+        function clearAll() {
+            clearCards(); // 清空卡片
+            document.getElementById('settingsLog').innerHTML = '';
+            log('已清空所有记录（包括日志）', 'info');
+        }
+
+        // 清空VAD卡片
+        function clearVADCards() {
+            document.getElementById('vadEvents').innerHTML = '<div class="empty-state"><div class="empty-state-icon">🎤</div><div>等待VAD事件...</div></div>';
+            log('已清空VAD事件', 'info');
+        }
+
+        // 清空ASR卡片
+        function clearASRCards() {
+            document.getElementById('asrResults').innerHTML = '<div class="empty-state"><div class="empty-state-icon">💬</div><div>等待语音识别...</div></div>';
+            selectedASRCards.clear();
+            asrTextMap.clear();
+            asrPromptMap.clear();
+            prefetchResults.clear();
+
+            // 重置序号计数器
+            nextSentenceNumber = 1;
+            cardIdCounter = 0;
+
+            document.getElementById('selectedCount').textContent = '0';
+            document.getElementById('asrActions').style.display = 'none';
+            log('已清空ASR结果', 'info');
+        }
+
+        // 清空LLM卡片
+        function clearLLMCards() {
+            document.getElementById('llmResponses').innerHTML = '<div class="empty-state"><div class="empty-state-icon">🤖</div><div>LLM功能待开发...</div></div>';
+            llmResponsesData = [];
+            log('已清空LLM响应', 'info');
+        }
+
+        // 清空用户界面卡片
+        function clearUserInterfaceCards() {
+            document.getElementById('userInterface').value = '';
+            userInterfaceContent = '';
+            log('已清空用户界面', 'info');
+        }
+
+        // 格式化时间
+        function formatTime(ms) {
+            const totalSeconds = Math.floor(ms / 1000);
+            const minutes = Math.floor(totalSeconds / 60);
+            const seconds = totalSeconds % 60;
+            const milliseconds = ms % 1000;
+            return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}.${milliseconds.toString().padStart(3, '0')}`;
+        }
+
+        // 格式化当前时间（包含毫秒）
+        function formatCurrentTime() {
+            const now = new Date();
+            const timeString = now.toLocaleTimeString('zh-CN', {
+                hour12: false,
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            }) + '.' + now.getMilliseconds().toString().padStart(3, '0');
+            return timeString;
+        }
+
+        // 获取事件emoji
+        function getEventEmoji(eventType) {
+            const emojis = {
+                'start': '🗣️',
+                'end': '🔇',
+                'cache_asr_trigger': '🚀',
+                'cache_asr_drop': '🗑️'
+            };
+            return emojis[eventType] || '📊';
+        }
+
+        // 监听VAD事件
+        window.addEventListener('vadEvent', (event) => {
+            const data = event.detail;
+            const container = document.getElementById('vadEvents');
+
+            // 清除空状态提示
+            if (container.querySelector('.empty-state')) {
+                container.innerHTML = '';
+            }
+
+            // 创建VAD事件卡片
+            const card = document.createElement('div');
+            card.className = 'event-card vad-event-card';
+
+            const eventType = data.event || 'unknown';
+            const emoji = getEventEmoji(eventType);
+            const time = formatTime(data.absoluteTimeMs || 0);
+
+            card.innerHTML = `
+                <div class="event-header">${data.timestamp || formatCurrentTime()}</div>
+                <div class="event-content">
+                    ${emoji} ${eventType}: ${time}
+                </div>
+            `;
+
+            container.appendChild(card);
+            container.scrollTop = container.scrollHeight;
+
+            log(`VAD: ${eventType} at ${time}`, 'info');
+
+            // 处理VAD事件
+            if (isRecording) {
+                if (eventType === 'end') {
+                    // VAD结束，开始计时
+                    lastVADEndTime = Date.now();
+                    clearTimeout(silenceTimer);
+                    const timeoutSec = parseInt(document.getElementById('silenceTimeoutSec').value) || 10;
+                    silenceTimer = setTimeout(() => {
+                        if (isRecording) {
+                            log(`静音超过${timeoutSec}秒，自动停止录音`, 'warning');
+                            handleStopRecording();
+                        }
+                    }, timeoutSec * 1000);
+                } else if (eventType === 'start') {
+                    // VAD开始，清除计时器
+                    clearTimeout(silenceTimer);
+                    silenceTimer = null;
+                    lastVADEndTime = null;
+                } else if (eventType === 'cache_asr_trigger') {
+                    // VAD trigger，检查是否需要清理前一次prefetch
+                    log(`收到cache_asr_trigger事件，当前prefetchResults数量: ${prefetchResults.size}`, 'info');
+                    if (prefetchResults.size > 0) {
+                        log(`检测到未处理的prefetch，主动发送drop清理`, 'warning');
+                        handleVADDrop();
+                    }
+                } else if (eventType === 'cache_asr_drop') {
+                    // VAD drop，处理预取卡片
+                    log(`收到cache_asr_drop事件，当前prefetchResults数量: ${prefetchResults.size}`, 'warning');
+                    handleVADDrop();
+                }
+            }
+        });
+
+        // 处理VAD drop事件
+        function handleVADDrop() {
+            // 查找最新的prefetch卡片并添加已丢弃样式
+            const prefetchEntries = Array.from(prefetchResults.entries());
+            log(`handleVADDrop: prefetchResults中有${prefetchEntries.length}个条目: ${prefetchEntries.map(([id, data]) => `${id}(#${data.previewSentenceNumber})`).join(', ')}`, 'info');
+
+            if (prefetchEntries.length === 0) {
+                log(`handleVADDrop: prefetchResults为空，无法处理drop`, 'warning');
+                return;
+            }
+
+            // 按卡片ID排序，取最新的
+            const latestPrefetch = prefetchEntries.sort((a, b) => {
+                const aId = parseInt(a[0].split('-')[2]);
+                const bId = parseInt(b[0].split('-')[2]);
+                return bId - aId;
+            })[0];
+
+            const [cardId, prefetchData] = latestPrefetch;
+            log(`handleVADDrop: 准备drop最新的prefetch: ${cardId}(#${prefetchData.previewSentenceNumber})`, 'info');
+
+            const prefetchCard = document.getElementById(cardId);
+
+            if (prefetchCard) {
+                // 添加被丢弃的样式
+                prefetchCard.classList.add('dropped');
+
+                // 更新标题显示为被丢弃
+                const title = prefetchCard.querySelector('.card-title');
+                if (title) {
+                    title.textContent = `转录 #${prefetchData.previewSentenceNumber} [已丢弃]`;
+                }
+
+                log(`ASR #${prefetchData.previewSentenceNumber} [DROPPED]: "${prefetchData.text}" (预取被丢弃)`, 'warning');
+            } else {
+                log(`handleVADDrop: 找不到DOM元素 ${cardId}`, 'error');
+            }
+
+            // 从待转换列表中移除（但保留卡片在页面上显示已丢弃状态）
+            prefetchResults.delete(cardId);
+            log(`handleVADDrop: 从prefetchResults中移除 ${cardId}，剩余${prefetchResults.size}个`, 'info');
+        }
+
+        // 监听VAD end事件，处理prefetch转换
+        window.addEventListener('vadEnd', (event) => {
+            // 延迟处理VAD end，等待可能的ASR prefetch结果到达
+            setTimeout(() => {
+                // 检查是否有待转换的prefetch结果（获取最新的一个）
+                const prefetchEntries = Array.from(prefetchResults.entries());
+                log(`vadEnd: (延迟处理) prefetchResults中有${prefetchEntries.length}个待转换条目: ${prefetchEntries.map(([id, data]) => `${id}(#${data.previewSentenceNumber})`).join(', ')}`, 'info');
+
+                if (prefetchEntries.length === 0) {
+                    log(`vadEnd: 没有待转换的prefetch结果`, 'info');
+                    return;
+                }
+
+                processVadEndPrefetch(prefetchEntries);
+            }, 200); // 等待200ms让ASR结果到达
+        });
+
+        function processVadEndPrefetch(prefetchEntries) {
+            // 按卡片ID排序，取最新的
+            const latestPrefetch = prefetchEntries.sort((a, b) => {
+                const aId = parseInt(a[0].split('-')[2]);
+                const bId = parseInt(b[0].split('-')[2]);
+                return bId - aId;
+            })[0];
+
+            const [cardId, prefetchData] = latestPrefetch;
+            const prefetchCard = document.getElementById(cardId);
+
+            if (prefetchCard) {
+                // 分配真实的句子序号并增加计数器
+                const realSentenceNumber = nextSentenceNumber++;
+
+                const finalData = {
+                    ...prefetchData,
+                    transcriptionNumber: realSentenceNumber
+                };
+
+                // 将prefetch卡片转换为最终结果卡片
+                updateCardForCached(prefetchCard, finalData, cardId);
+
+                // 更新存储的文本映射
+                asrTextMap.set(cardId, prefetchData.text);
+
+                log(`ASR #${realSentenceNumber} [CACHED]: "${prefetchData.text}" (prefetch→最终)`, 'success');
+
+                // 如果启用了自动LLM，现在调用LLM
+                if (autoLLMEnabled) {
+                    callLLMForASR(prefetchData.text);
+                }
+            }
+
+            // 清除已转换的prefetch结果
+            prefetchResults.delete(cardId);
+        }
+
+        // 监听ASR结果
+        window.addEventListener('asrResult', (event) => {
+            const data = event.detail;
+            const container = document.getElementById('asrResults');
+
+            // 清除空状态提示
+            if (container.querySelector('.empty-state')) {
+                container.innerHTML = '';
+            }
+
+            const isPrefetch = data.isPrefetch === true;
+
+            if (isPrefetch) {
+                // 为prefetch结果分配预览的句子序号和唯一的卡片ID
+                cardIdCounter++;
+                const cardId = `asr-card-${cardIdCounter}`;
+                const previewSentenceNumber = nextSentenceNumber;
+
+                const prefetchData = {
+                    ...data,
+                    previewSentenceNumber: previewSentenceNumber,
+                    cardId: cardId
+                };
+
+                // 存储prefetch结果
+                prefetchResults.set(cardId, prefetchData);
+                createASRCard(prefetchData, cardId, 'prefetch');
+                log(`ASR #${previewSentenceNumber} [PREFETCH]: "${data.text}" (cardId: ${cardId}, prefetchResults数量: ${prefetchResults.size})`, 'info');
+            } else {
+                // 重新处理的结果，分配真实的句子序号
+                cardIdCounter++;
+                const cardId = `asr-card-${cardIdCounter}`;
+                const realSentenceNumber = nextSentenceNumber++;
+
+                const finalData = {
+                    ...data,
+                    transcriptionNumber: realSentenceNumber,
+                    cardId: cardId
+                };
+
+                createASRCard(finalData, cardId, 'reprocessed');
+                log(`ASR #${realSentenceNumber} [REPROCESSED]: "${data.text}"`, 'warning');
+
+                // 如果启用了自动LLM，调用LLM
+                if (autoLLMEnabled) {
+                    callLLMForASR(data.text);
+                }
+            }
+        });
+
+        // 创建ASR卡片的统一函数
+        function createASRCard(data, cardId, type) {
+            const container = document.getElementById('asrResults');
+            const card = document.createElement('div');
+            card.className = `event-card asr-result-card ${type}`;
+            card.id = cardId;
+
+            // 保存文本内容和对应的ASR prompt
+            asrTextMap.set(cardId, data.text);
+            asrPromptMap.set(cardId, lastGeneratedASRPrompt || '未使用ASR Prompt');
+
+            // 构建标题
+            let titleSuffix = '';
+            switch (type) {
+                case 'prefetch': titleSuffix = ' [预取]'; break;
+                case 'cached': titleSuffix = ' [缓存]'; break;
+                case 'reprocessed': titleSuffix = ' [重处理]'; break;
+                default: titleSuffix = ''; break;
+            }
+
+            let metaInfo = '';
+            if (data.performance) {
+                const perf = data.performance;
+                metaInfo = `
+                    <div class="asr-meta">
+                        处理时间: ${perf.total_processing_ms?.toFixed(0)}ms | 
+                        ${perf.provider?.toUpperCase()}: ${perf.api_fetch_ms?.toFixed(0)}ms
+                    </div>
+                `;
+            }
+
+            // 确定显示的序号
+            const displayNumber = data.previewSentenceNumber || data.transcriptionNumber;
+
+            card.innerHTML = `
+                <div class="card-header-row">
+                    <div class="card-title">转录 #${displayNumber}${titleSuffix}</div>
+                    <button class="asr-prompt-toggle" onclick="toggleASRPrompt('${cardId}')" title="显示/隐藏ASR Prompt">
+                        📋
+                    </button>
+                </div>
+                <div class="card-timestamp">收到结果: ${data.timestamp}</div>
+                <div class="card-final-timestamp" style="display: none;">最终确认: </div>
+                <div class="asr-text" data-card-id="${cardId}">"${data.text}"</div>
+                <div class="asr-prompt-section" id="prompt-${cardId}" style="display: none;">
+                    <div class="asr-prompt-header">🎯 ASR Prompt:</div>
+                    <div class="asr-prompt-content" id="prompt-content-${cardId}">
+                        加载中...
+                    </div>
+                </div>
+                ${metaInfo}
+            `;
+
+            setupCardInteractions(card, cardId);
+            container.appendChild(card);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // 更新卡片为缓存状态
+        function updateCardForCached(card, data, cardId) {
+            // 更新样式
+            card.className = 'event-card asr-result-card cached';
+
+            // 更新标题
+            const title = card.querySelector('.card-title');
+            title.textContent = `转录 #${data.transcriptionNumber} [最终结果]`;
+
+            // 显示最终确认时间
+            const finalTimestamp = card.querySelector('.card-final-timestamp');
+            const now = new Date();
+            const timeString = now.toLocaleTimeString('zh-CN', {
+                hour12: false,
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            }) + '.' + now.getMilliseconds().toString().padStart(3, '0');
+            finalTimestamp.textContent = `最终确认: ${timeString}`;
+            finalTimestamp.style.display = 'block';
+
+            // 更新文本内容（如果不同）
+            const textElement = card.querySelector('.asr-text');
+            const newText = `"${data.text}"`;
+            if (textElement.textContent !== newText) {
+                textElement.textContent = newText;
+                asrTextMap.set(cardId, data.text);
+            }
+
+            // 更新性能信息
+            const existingMeta = card.querySelector('.asr-meta');
+            if (existingMeta && data.performance) {
+                const perf = data.performance;
+                existingMeta.innerHTML = `
+                    处理时间: ${perf.total_processing_ms?.toFixed(0)}ms | 
+                    ${perf.provider?.toUpperCase()}: ${perf.api_fetch_ms?.toFixed(0)}ms
+                `;
+            }
+        }
+
+        // 设置卡片交互事件
+        function setupCardInteractions(card, cardId) {
+            // 添加卡片选择事件（点击非toggle按钮区域）
+            card.onclick = function (e) {
+                if (e.target.classList.contains('asr-prompt-toggle') ||
+                    e.target.closest('.asr-prompt-section')) {
+                    e.stopPropagation();
+                    return;
+                }
+                toggleASRSelection(cardId);
+            };
+        }
+
+        // 切换LLM卡片展开状态
+        function toggleLLMCard(cardId) {
+            const card = document.getElementById(cardId);
+            if (card) {
+                card.classList.toggle('expanded');
+
+                // 平滑滚动到卡片位置（如果展开）
+                if (card.classList.contains('expanded')) {
+                    setTimeout(() => {
+                        card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    }, 150);
+                }
+            }
+        }
+
+        // 切换ASR Prompt显示状态
+        function toggleASRPrompt(cardId) {
+            const promptSection = document.getElementById(`prompt-${cardId}`);
+            const toggleButton = document.querySelector(`[onclick="toggleASRPrompt('${cardId}')"]`);
+            const promptContent = document.getElementById(`prompt-content-${cardId}`);
+
+            if (promptSection && toggleButton && promptContent) {
+                const isVisible = promptSection.style.display !== 'none';
+
+                if (isVisible) {
+                    // 隐藏prompt
+                    promptSection.style.display = 'none';
+                    toggleButton.textContent = '📋';
+                    toggleButton.title = '显示ASR Prompt';
+                } else {
+                    // 显示prompt
+                    promptSection.style.display = 'block';
+                    toggleButton.textContent = '📄';
+                    toggleButton.title = '隐藏ASR Prompt';
+
+                    // 加载prompt内容
+                    const storedPrompt = asrPromptMap.get(cardId);
+                    if (storedPrompt) {
+                        promptContent.textContent = storedPrompt;
+                    } else {
+                        promptContent.textContent = '未找到ASR Prompt信息';
+                    }
+
+                    // 平滑滚动到卡片位置
+                    setTimeout(() => {
+                        promptSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    }, 100);
+                }
+            }
+        }
+
+        // 更新LLM内容的处理函数
+        function updateLLMContent(element) {
+            const cardId = element.getAttribute('data-card-id');
+            const newContent = element.textContent.trim();
+
+            // 查找对应的LLM响应数据
+            const responseData = llmResponsesData.find(data => data.id === cardId);
+            if (responseData) {
+                const oldContent = responseData.modifiedProcessedOutput;
+                responseData.modifiedProcessedOutput = newContent;
+
+                // 同步更新卡片中的两个编辑区域
+                syncLLMEditAreas(cardId, newContent);
+
+                // 更新用户界面内容
+                updateUserInterfaceContent(oldContent, newContent);
+
+                log(`LLM内容已修改: "${oldContent}" -> "${newContent}"`, 'info');
+            }
+        }
+
+        // 同步LLM卡片中的两个编辑区域
+        function syncLLMEditAreas(cardId, newContent) {
+            const card = document.getElementById(cardId);
+            if (card) {
+                const summaryArea = card.querySelector('.llm-processed-output-summary');
+                const detailsArea = card.querySelector('.llm-processed-output');
+
+                if (summaryArea && summaryArea.textContent !== newContent) {
+                    summaryArea.textContent = newContent;
+                }
+                if (detailsArea && detailsArea.textContent !== newContent) {
+                    detailsArea.textContent = newContent;
+                }
+            }
+        }
+
+        // 更新用户界面内容
+        function updateUserInterfaceContent(oldContent, newContent) {
+            const userInterfaceTextarea = document.getElementById('userInterface');
+
+            // 替换用户界面中的内容
+            if (userInterfaceContent.includes(oldContent)) {
+                userInterfaceContent = userInterfaceContent.replace(oldContent, newContent);
+                userInterfaceTextarea.value = userInterfaceContent;
+                log(`用户界面内容已更新`, 'success');
+            }
+        }
+
+        // 暴露函数到window对象，供audio_client.js调用
+        window.processASRPrompt = processASRPrompt;
+        window.testTicketField = testTicketField;
+
+        // 页面加载完成
+        document.addEventListener('DOMContentLoaded', async () => {
+            log('系统正在初始化...', 'info');
+
+            // 初始化设置
+            loadSettings();
+            setupSettingsListeners();
+
+            // 检查环境支持
+            if (typeof WebAssembly === 'undefined') {
+                log('浏览器不支持WebAssembly!', 'error');
+                return;
+            }
+
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                log('浏览器不支持音频录制!', 'error');
+                return;
+            }
+
+            // 初始化 Clerk 认证系统
+            initializeClerk();
+
+            // 自动初始化VAD
+            await initVAD();
+
+            // 测试票据输入框
+            testTicketField();
+
+            log('系统已就绪', 'success');
+            log('完成登录并获取Token后即可开始使用', 'info');
+        });
+
+        // 页面卸载时清理
+        window.addEventListener('beforeunload', () => {
+            if (window.audioProcessor) {
+                window.audioProcessor.cleanup();
+            }
+            if (window.globalStreamingVAD) {
+                window.globalStreamingVAD.destroy();
+            }
+        });
+    </script>
+</body>
+
+</html>

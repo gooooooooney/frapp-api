@@ -245,10 +245,14 @@ export async function processAudioWithFireworks(audioDataChunks: Uint8Array[], w
     const env = getAudioEnv();
     const startTime = Date.now();
     
+    console.log(`🔥 Fireworks ASR called with ${audioDataChunks.length} chunks, speechTime: ${speechStartTimeMs}ms - ${speechEndTimeMs}ms`);
+    
     if (!env.FIREWORKS_API_KEY) {
+        console.error('❌ Fireworks ASR failed: FIREWORKS_API_KEY not set');
         throw new Error("FIREWORKS_API_KEY secret is not set in the worker environment.");
     }
     if (audioDataChunks.length === 0) {
+        console.error('❌ Fireworks ASR aborted: empty audioDataChunks array');
         return;
     }
 
@@ -327,10 +331,14 @@ export async function processAudioWithGroq(audioDataChunks: Uint8Array[], websoc
     const env = getAudioEnv();
     const startTime = Date.now();
     
+    console.log(`🤖 Groq ASR called with ${audioDataChunks.length} chunks, speechTime: ${speechStartTimeMs}ms - ${speechEndTimeMs}ms`);
+    
     if (!env.GROQ_API_KEY) {
+        console.error('❌ Groq ASR failed: GROQ_API_KEY not set');
         throw new Error("GROQ_API_KEY secret is not set in the worker environment.");
     }
     if (audioDataChunks.length === 0) {
+        console.error('❌ Groq ASR aborted: empty audioDataChunks array');
         return;
     }
 
@@ -636,7 +644,13 @@ async function handleAudioMessage(
       
       let currentChunk: Uint8Array | null = null;
       if (parsedMessage.data && parsedMessage.data.length > 0) {
-        currentChunk = optimizedBase64Decode(parsedMessage.data);
+        try {
+          currentChunk = optimizedBase64Decode(parsedMessage.data);
+          console.log(`🎵 Decoded audio chunk: ${parsedMessage.data.length} base64 chars -> ${currentChunk?.length || 0} bytes (VAD: ${vad_state || 'none'})`);
+        } catch (decodeError) {
+          console.error('❌ Base64 decode failed:', decodeError);
+          currentChunk = null;
+        }
         
         // 原始完整音频存储处理 (异步，不阻塞实时转录)
         // 存储所有音频块，不依赖VAD状态，保持完整音频流连续性
@@ -653,28 +667,43 @@ async function handleAudioMessage(
             console.error('❌ Original audio storage processing error:', err);
           });
         }
+      } else {
+        console.log(`🎵 No audio data in message (data length: ${parsedMessage.data?.length || 0})`);
       }
       
       if (vad_state === 'start') {
+        console.log(`🎵 VAD START event received - globalTimeMs: ${context.globalTimeMs}, vad_offset_ms: ${vad_offset_ms}`);
+        
         context.isCaching = true;
         context.speechAudioCache = [];
         context.speechStartTimeMs = context.globalTimeMs + (vad_offset_ms || 0);
         
+        // 处理负偏移（需要从ring buffer获取前缀数据）
         if (vad_offset_ms && vad_offset_ms < 0) {
           const bufferData = context.previousChunkBuffer.getData();
+          console.log(`🎵 VAD START negative offset: ${vad_offset_ms}ms, ringBufferSize: ${bufferData.length} bytes`);
+          
           if (bufferData.length > 0) {
             const offsetBytes = Math.abs(vad_offset_ms) * BYTES_PER_MS;
             const startByte = Math.max(0, bufferData.length - offsetBytes);
             const prefixChunk = bufferData.slice(startByte);
             context.speechAudioCache.push(prefixChunk);
+            console.log(`🎵 Added prefix chunk: ${prefixChunk.length} bytes (startByte: ${startByte})`);
           }
         }
         
+        console.log(`🎵 VAD START complete - speechStartTimeMs: ${context.speechStartTimeMs}, cacheLength: ${context.speechAudioCache.length}`);
         websocket.send(context.MESSAGE_TEMPLATES.vad_cache_start);
       }
 
+      // 缓存中间音频块（VAD start到end之间）
       if (context.isCaching && currentChunk && vad_state !== 'end') {
         context.speechAudioCache.push(currentChunk);
+        console.log(`🎵 Cached audio chunk: ${currentChunk.length} bytes (total cache: ${context.speechAudioCache.length} chunks)`);
+      } else if (context.isCaching && !currentChunk && vad_state !== 'end') {
+        console.log(`🎵 Skipping cache - no currentChunk (isCaching: ${context.isCaching}, vad_state: ${vad_state})`);
+      } else if (!context.isCaching && vad_state !== 'end' && vad_state !== 'start') {
+        console.log(`🎵 Skipping cache - not caching (isCaching: ${context.isCaching}, vad_state: ${vad_state})`);
       }
       
       if (currentChunk) {
@@ -682,33 +711,68 @@ async function handleAudioMessage(
       }
       context.globalTimeMs += CHUNK_DURATION_MS;
       
-      if (vad_state === 'end' && context.isCaching) {
-        const speechEndTimeMs = context.globalTimeMs + (vad_offset_ms || 0);
+      // 详细调试VAD end事件处理
+      if (vad_state === 'end') {
+        console.log(`🎵 VAD END event received - isCaching: ${context.isCaching}, speechCacheLength: ${context.speechAudioCache.length}, currentChunkSize: ${currentChunk?.length || 0}`);
         
-        if (currentChunk && vad_offset_ms && vad_offset_ms > 0) {
-          const endByte = Math.min(currentChunk.length, vad_offset_ms * BYTES_PER_MS);
-          const endChunk = currentChunk.slice(0, endByte);
-          context.speechAudioCache.push(endChunk);
-        } else if (currentChunk) {
-          context.speechAudioCache.push(currentChunk);
+        if (context.isCaching) {
+          const speechEndTimeMs = context.globalTimeMs + (vad_offset_ms || 0);
+          
+          // 处理当前chunk的end部分
+          let endChunkAdded = false;
+          if (currentChunk && vad_offset_ms && vad_offset_ms > 0) {
+            const endByte = Math.min(currentChunk.length, vad_offset_ms * BYTES_PER_MS);
+            const endChunk = currentChunk.slice(0, endByte);
+            context.speechAudioCache.push(endChunk);
+            endChunkAdded = true;
+            console.log(`🎵 Added VAD end chunk: ${endChunk.length} bytes (offset: ${vad_offset_ms}ms, endByte: ${endByte})`);
+          } else if (currentChunk) {
+            context.speechAudioCache.push(currentChunk);
+            endChunkAdded = true;
+            console.log(`🎵 Added full current chunk: ${currentChunk.length} bytes (no offset)`);
+          } else {
+            console.log(`🎵 No current chunk to add (currentChunk: ${currentChunk}, vad_offset_ms: ${vad_offset_ms})`);
+          }
+          
+          context.isCaching = false;
+          const cachedData = [...context.speechAudioCache];
+          context.speechAudioCache = [];
+          
+          // 详细统计缓存数据
+          const totalBytes = cachedData.reduce((sum, chunk) => sum + chunk.length, 0);
+          const totalDurationMs = Math.round(totalBytes / BYTES_PER_MS);
+          console.log(`🎵 Speech audio cache: ${cachedData.length} chunks, ${totalBytes} bytes, ~${totalDurationMs}ms duration`);
+          
+          const vadEndTimestamp = new Date().toISOString();
+          websocket.send(context.MESSAGE_TEMPLATES.vad_cache_end_prefix + vadEndTimestamp + '"}');
+          
+          // 检查是否有数据进行ASR
+          if (cachedData.length === 0) {
+            console.error(`❌ No audio data cached for ASR! isCaching was true but cache is empty.`);
+            websocket.send(JSON.stringify({
+              type: 'transcription_error',
+              error: 'No audio data cached for transcription',
+              details: 'speechAudioCache was empty despite isCaching being true',
+              timestamp: new Date().toISOString()
+            }));
+          } else {
+            const asrProvider = env.USE_FIREWORKS ? 'Fireworks' : 'Groq';
+            const asrFunction = env.USE_FIREWORKS ? processAudioWithFireworks : processAudioWithGroq;
+            console.log(`🎵 Starting ASR with ${asrProvider} (${cachedData.length} chunks, ${totalBytes} bytes)`);
+            
+            asrFunction(cachedData, websocket, context.speechStartTimeMs, speechEndTimeMs).catch(err => {
+              console.error(`❌ ASR processing failed:`, err);
+              websocket.send(JSON.stringify({
+                type: 'transcription_error',
+                error: `Failed to process audio with ${asrProvider} API.`,
+                details: err.message,
+                timestamp: new Date().toISOString()
+              }));
+            });
+          }
+        } else {
+          console.log(`🎵 VAD END ignored - not caching (isCaching: ${context.isCaching})`);
         }
-        
-        context.isCaching = false;
-        const cachedData = [...context.speechAudioCache];
-        context.speechAudioCache = [];
-        
-        const vadEndTimestamp = new Date().toISOString();
-        websocket.send(context.MESSAGE_TEMPLATES.vad_cache_end_prefix + vadEndTimestamp + '"}');
-        
-        const asrFunction = env.USE_FIREWORKS ? processAudioWithFireworks : processAudioWithGroq;
-        asrFunction(cachedData, websocket, context.speechStartTimeMs, speechEndTimeMs).catch(err => {
-          websocket.send(JSON.stringify({
-            type: 'transcription_error',
-            error: `Failed to process audio with ${env.USE_FIREWORKS ? 'Fireworks' : 'Groq'} API.`,
-            details: err.message,
-            timestamp: new Date().toISOString()
-          }));
-        });
       }
       break;
 
