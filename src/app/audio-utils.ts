@@ -11,8 +11,9 @@ export interface AudioStreamStartMessage {
 export interface AudioChunkMessage {
   type: 'audio_chunk';
   data: string;
-  vad_state?: 'start' | 'end';
+  vad_state?: 'start' | 'end' | 'cache_asr_trigger' | 'cache_asr_drop';
   vad_offset_ms?: number;
+  asr_prompt?: string;
 }
 
 export interface AudioStreamEndMessage {
@@ -28,6 +29,7 @@ export interface TranscriptionResult {
   speechStartTimeMs: number;
   speechEndTimeMs: number;
   timestamp: string;
+  is_prefetch?: boolean;
   performance: {
     total_processing_ms: number;
     wav_creation_ms: number;
@@ -241,7 +243,7 @@ export async function handleAudioSession(websocket: WebSocket, context?: AudioSe
   })
 }
 
-export async function processAudioWithFireworks(audioDataChunks: Uint8Array[], websocket: WebSocket, speechStartTimeMs: number, speechEndTimeMs: number): Promise<void> {
+export async function processAudioWithFireworks(audioDataChunks: Uint8Array[], websocket: WebSocket, speechStartTimeMs: number, speechEndTimeMs: number, isPrefetch: boolean = false): Promise<void> {
     const env = getAudioEnv();
     const startTime = Date.now();
     
@@ -307,6 +309,7 @@ export async function processAudioWithFireworks(audioDataChunks: Uint8Array[], w
             speechStartTimeMs: speechStartTimeMs,
             speechEndTimeMs: speechEndTimeMs,
             timestamp: new Date().toISOString(),
+            is_prefetch: isPrefetch,
             performance: {
                 total_processing_ms: totalEndTime - startTime,
                 wav_creation_ms: wavEndTime - wavStartTime,
@@ -327,7 +330,7 @@ export async function processAudioWithFireworks(audioDataChunks: Uint8Array[], w
     }
 }
 
-export async function processAudioWithGroq(audioDataChunks: Uint8Array[], websocket: WebSocket, speechStartTimeMs: number, speechEndTimeMs: number): Promise<void> {
+export async function processAudioWithGroq(audioDataChunks: Uint8Array[], websocket: WebSocket, speechStartTimeMs: number, speechEndTimeMs: number, isPrefetch: boolean = false): Promise<void> {
     const env = getAudioEnv();
     const startTime = Date.now();
     
@@ -394,6 +397,7 @@ export async function processAudioWithGroq(audioDataChunks: Uint8Array[], websoc
             speechStartTimeMs: speechStartTimeMs,
             speechEndTimeMs: speechEndTimeMs,
             timestamp: new Date().toISOString(),
+            is_prefetch: isPrefetch,
             performance: {
                 total_processing_ms: totalEndTime - startTime,
                 wav_creation_ms: wavEndTime - wavStartTime,
@@ -710,6 +714,56 @@ async function handleAudioMessage(
         context.previousChunkBuffer.append(currentChunk);
       }
       context.globalTimeMs += CHUNK_DURATION_MS;
+      
+      // 处理 cache_asr_trigger 事件（prefetch模式）
+      if (vad_state === 'cache_asr_trigger' && context.isCaching) {
+        console.log(`🎵 VAD CACHE_ASR_TRIGGER event received - speechCacheLength: ${context.speechAudioCache.length}, currentChunkSize: ${currentChunk?.length || 0}`);
+        
+        const speechEndTimeMs = context.globalTimeMs + (vad_offset_ms || 0);
+        
+        // 创建当前缓存的副本进行prefetch ASR处理
+        const cachedDataForPrefetch = [...context.speechAudioCache];
+        
+        // 添加当前chunk的trigger部分
+        if (currentChunk && vad_offset_ms && vad_offset_ms > 0) {
+          const endByte = Math.min(currentChunk.length, vad_offset_ms * BYTES_PER_MS);
+          const triggerChunk = currentChunk.slice(0, endByte);
+          cachedDataForPrefetch.push(triggerChunk);
+          console.log(`🎵 Added trigger chunk for prefetch: ${triggerChunk.length} bytes (offset: ${vad_offset_ms}ms)`);
+        } else if (currentChunk) {
+          cachedDataForPrefetch.push(currentChunk);
+          console.log(`🎵 Added full current chunk for prefetch: ${currentChunk.length} bytes`);
+        }
+        
+        // 统计prefetch数据
+        const totalBytes = cachedDataForPrefetch.reduce((sum, chunk) => sum + chunk.length, 0);
+        const totalDurationMs = Math.round(totalBytes / BYTES_PER_MS);
+        console.log(`🎵 Prefetch cache: ${cachedDataForPrefetch.length} chunks, ${totalBytes} bytes, ~${totalDurationMs}ms duration`);
+        
+        // 发送prefetch ASR请求（标记为预取）
+        if (cachedDataForPrefetch.length > 0) {
+          const asrProvider = env.USE_FIREWORKS ? 'Fireworks' : 'Groq';
+          console.log(`🎵 Starting PREFETCH ASR with ${asrProvider} (${cachedDataForPrefetch.length} chunks)`);
+          
+          // 使用现有的ASR函数，传递prefetch标记
+          const asrFunction = env.USE_FIREWORKS ? processAudioWithFireworks : processAudioWithGroq;
+          
+          asrFunction(cachedDataForPrefetch, websocket, context.speechStartTimeMs, speechEndTimeMs, true).catch(err => {
+            console.error(`❌ Prefetch ASR processing failed:`, err);
+            websocket.send(JSON.stringify({
+              type: 'transcription_error',
+              error: `Failed to process prefetch audio with ${asrProvider} API.`,
+              details: err.message,
+              is_prefetch: true,
+              timestamp: new Date().toISOString()
+            }));
+          });
+        } else {
+          console.log(`⚠️ No data for prefetch ASR - cachedDataForPrefetch is empty`);
+        }
+        
+        // 继续缓存，不清空speechAudioCache（与VAD end不同）
+      }
       
       // 详细调试VAD end事件处理
       if (vad_state === 'end') {

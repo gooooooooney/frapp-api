@@ -5,12 +5,37 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>实时语音识别系统</title>
-
-    <!-- Clerk SDK 已手动配置 -->
+    <script  crossorigin="anonymous"
+    data-clerk-publishable-key="pk_test_c29saWQtaHVza3ktODIuY2xlcmsuYWNjb3VudHMuZGV2JA"
+    src="https://unpkg.com/@clerk/clerk-js@latest/dist/clerk.browser.js" type="text/javascript"></script>
+    <!-- Clerk SDK 自动检测配置 -->
     <script>
-        // 标记Clerk可用，因为已手动添加Clerk脚本标签
-        window.clerkAvailable = true;
-        console.log('Clerk SDK: Manual configuration detected, SDK available');
+        // 自动检测Clerk配置
+        function detectClerkConfiguration() {
+            // 查找页面中的Clerk脚本标签
+            const clerkScripts = document.querySelectorAll('script[data-clerk-publishable-key]');
+            
+            if (clerkScripts.length > 0) {
+                const clerkScript = clerkScripts[0];
+                const publishableKey = clerkScript.getAttribute('data-clerk-publishable-key');
+                
+                if (publishableKey && publishableKey.startsWith('pk_')) {
+                    window.clerkAvailable = true;
+                    window.detectedClerkKey = publishableKey;
+                    console.log(`Clerk SDK: 检测到有效配置，Key: ${publishableKey.substring(0, 20)}...`);
+                    return true;
+                } else {
+                    console.log('Clerk SDK: 找到脚本标签但Key无效');
+                }
+            }
+            
+            window.clerkAvailable = false;
+            console.log('Clerk SDK: 未检测到有效配置');
+            return false;
+        }
+        
+        // 执行检测
+        detectClerkConfiguration();
     </script>
     <style>
         * {
@@ -931,25 +956,25 @@
                             <strong style="color: #495057; font-size: 13px;">🎙️ VAD参数</strong>
                             <div class="config-row" style="margin-top: 8px;">
                                 <label style="min-width: 80px; font-size: 12px;">检测阈值:</label>
-                                <input type="number" id="threshold" value="0.5" min="0" max="1" step="0.1"
+                                <input type="number" id="threshold" value="0.1" min="0" max="1" step="0.1"
                                     style="width: 60px; font-size: 12px;">
                                 <span class="unit" style="font-size: 11px;">(0-1)</span>
                             </div>
                             <div class="config-row" style="margin-top: 6px;">
                                 <label style="min-width: 80px; font-size: 12px;">语音前缀:</label>
-                                <input type="number" id="prefixMs" value="128" min="0" step="16"
+                                <input type="number" id="prefixMs" value="64" min="0" step="16"
                                     style="width: 60px; font-size: 12px;">
                                 <span class="unit" style="font-size: 11px;">ms</span>
                             </div>
                             <div class="config-row" style="margin-top: 6px;">
                                 <label style="min-width: 80px; font-size: 12px;">静音持续:</label>
-                                <input type="number" id="silenceMs" value="640" min="0" step="16"
+                                <input type="number" id="silenceMs" value="480" min="0" step="16"
                                     style="width: 60px; font-size: 12px;">
                                 <span class="unit" style="font-size: 11px;">ms</span>
                             </div>
                             <div class="config-row" style="margin-top: 6px;">
                                 <label style="min-width: 80px; font-size: 12px;">ASR触发:</label>
-                                <input type="number" id="asrTriggerMs" value="256" min="0" step="16"
+                                <input type="number" id="asrTriggerMs" value="192" min="0" step="16"
                                     style="width: 60px; font-size: 12px;">
                                 <span class="unit" style="font-size: 11px;">ms</span>
                             </div>
@@ -1220,9 +1245,7 @@
     <script type="module" src="vad/stream_vad.js"></script>
     <script src="audio_client.js"></script>
     <script src="debug.js"></script>
-    <script  crossorigin="anonymous"
-        data-clerk-publishable-key="pk_test_c29saWQtaHVza3ktODIuY2xlcmsuYWNjb3VudHMuZGV2JA"
-        src="https://unpkg.com/@clerk/clerk-js@latest/dist/clerk.browser.js" type="text/javascript"></script>
+    
 
     <script>
         let isConnected = false;
@@ -1365,7 +1388,8 @@
             }
 
             try {
-                log('正在初始化 Clerk SDK...', 'info');
+                const detectedKey = window.detectedClerkKey || 'unknown';
+                log(`正在初始化 Clerk SDK... (Key: ${detectedKey.substring(0, 20)}...)`, 'info');
 
                 // 等待 Clerk SDK 加载
                 let attempts = 0;
@@ -1377,7 +1401,7 @@
                         if (window.Clerk) {
                             resolve();
                         } else if (attempts >= maxAttempts) {
-                            reject(new Error('Clerk SDK 加载超时'));
+                            reject(new Error('Clerk SDK 脚本加载超时 (10秒)'));
                         } else {
                             setTimeout(checkClerk, 100);
                         }
@@ -1385,9 +1409,10 @@
                     checkClerk();
                 });
 
+                log('Clerk SDK 脚本已加载，正在初始化...', 'info');
                 await window.Clerk.load();
                 isClerkInitialized = true;
-                log('Clerk SDK 加载成功', 'success');
+                log(`Clerk SDK 初始化成功! Key: ${detectedKey.substring(0, 20)}...`, 'success');
 
                 // 隐藏加载状态
                 document.getElementById('clerk-loading').style.display = 'none';
@@ -1400,11 +1425,37 @@
                 window.Clerk.addListener('session', () => checkAuthState());
 
             } catch (error) {
-                log(`Clerk SDK 加载失败: ${error.message}`, 'error');
-
-                // 隐藏加载状态，显示不可用状态
-                document.getElementById('clerk-loading').style.display = 'none';
-                document.getElementById('clerk-unavailable').style.display = 'block';
+                log(`Clerk SDK 初始化失败: ${error.message}`, 'error');
+                
+                // 根据错误类型提供不同的提示
+                const unavailableDiv = document.getElementById('clerk-unavailable');
+                const loadingDiv = document.getElementById('clerk-loading');
+                
+                loadingDiv.style.display = 'none';
+                
+                // 更新错误消息内容
+                const errorContent = unavailableDiv.querySelector('div:last-child');
+                if (error.message.includes('超时')) {
+                    errorContent.innerHTML = `
+                        检测到Clerk配置但SDK加载失败<br>
+                        <strong>错误:</strong> ${error.message}<br>
+                        <strong>建议:</strong> 检查网络连接或Key是否有效
+                    `;
+                } else if (error.message.includes('invalid')) {
+                    errorContent.innerHTML = `
+                        Clerk Key验证失败<br>
+                        <strong>错误:</strong> ${error.message}<br>
+                        <strong>建议:</strong> 请检查Publishable Key是否正确
+                    `;
+                } else {
+                    errorContent.innerHTML = `
+                        Clerk SDK初始化失败<br>
+                        <strong>错误:</strong> ${error.message}<br>
+                        <strong>Key:</strong> ${window.detectedClerkKey?.substring(0, 30) || 'unknown'}...
+                    `;
+                }
+                
+                unavailableDiv.style.display = 'block';
             }
         }
 
@@ -2014,13 +2065,15 @@
                     sampleRate: 16000
                 };
 
+                log(`VAD配置: threshold=${vadConfig.threshold}, prefixMs=${vadConfig.prefixMs}, speechFrames=${Math.floor(vadConfig.prefixMs / vadConfig.hopMs)}`, 'info');
+
                 const config = new window.VADConfig(vadConfig);
                 window.globalStreamingVAD = new window.StreamingVAD(config);
                 await window.globalStreamingVAD.init();
                 window.vadEvents = [];
 
                 vadInitialized = true;
-                log('VAD初始化成功', 'success');
+                log('VAD初始化成功 - 需要连续语音检测才能触发start事件', 'success');
             } catch (error) {
                 log(`VAD初始化失败: ${error.message}`, 'error');
             }
